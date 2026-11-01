@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>body{margin:0;background:#0D0F13;font-family:Archivo,system-ui,sans-serif}a{color:oklch(0.76 0.12 230)}a:hover{color:oklch(0.85 0.10 230)}</style>
+</helmet>
+<div style="min-height:100vh;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:32px;padding:32px 16px;box-sizing:border-box">
+  <x-import component-from-global-scope="IOSDevice" from="./ios-frame.jsx" dark="{{ true }}" hint-size="402px,874px">
+    <div style="height:100%;display:flex;flex-direction:column;background:#0D0F13;padding-top:54px;box-sizing:border-box">
+      <iframe src="Divergence Terminal.dc.html" title="Divergence" style="flex:1;width:100%;border:0;display:block;background:#0D0F13"></iframe>
+    </div>
+  </x-import>
+  <div style="max-width:300px;display:flex;flex-direction:column;gap:10px;color:#C9CED8;font-size:13px;line-height:1.55">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.14em;color:#8B93A1">DIVERGENCE · PHONE</span>
+    <span>The phone app now runs the full Terminal: market map, screeners for US stocks, India and crypto, options and intraday, long-term signals, shortages and news, institutions, portfolios, alerts and journal.</span>
+    <span>Same data and saved portfolios as the desktop view. Scroll inside the phone; tabs sit under the header.</span>
+    <a href="Divergence Terminal.dc.html">Open full-screen Terminal ›</a>
+    <a href="Divergence Phone v1.dc.html">Previous phone design ›</a>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
