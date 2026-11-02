@@ -87,6 +87,46 @@ a:hover{color:oklch(0.44 0.12 165)}
     </div>
     <sc-if value="{{ tab_market }}" hint-placeholder-val="{{ true }}">
     <div style="display:flex;flex-direction:column;gap:12px;padding-top:12px">
+    <sc-if value="{{ bf.show }}" hint-placeholder-val="{{ false }}">
+      <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:stretch">
+        <div style="flex:2 1 520px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:10px">
+          <div style="display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 12px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)">{{ bf.title }}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint)">{{ bf.when }}</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:8px 18px;align-items:baseline">
+            <span style="font-size:16px;font-weight:700;color:var(--accent)">{{ bf.reg }}</span>
+            <span style="{{ bf.regChgStyle }}">{{ bf.regChg }}</span>
+            <span style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--mute)">{{ bf.stats }}</span>
+          </div>
+          <span style="font-size:12px;color:var(--mute)">{{ bf.working }}</span>
+          <div style="display:flex;flex-wrap:wrap;gap:6px">
+            <sc-for list="{{ bf.fut }}" as="f" hint-placeholder-count="0"><span style="{{ f.style }}">{{ f.t }}</span></sc-for>
+          </div>
+          <div style="display:flex;flex-direction:column">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:700;letter-spacing:.08em;color:var(--up);padding-bottom:4px">{{ bf.bestTitle }}</span>
+            <sc-for list="{{ bf.best }}" as="r" hint-placeholder-count="0">
+              <div onClick="{{ r.open }}" style="display:grid;grid-template-columns:64px repeat(4,minmax(0,1fr));gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line);cursor:pointer;font-family:'JetBrains Mono',monospace;font-size:11.5px">
+                <span style="font-weight:700;color:var(--accent)">{{ r.sym }}</span><span>{{ r.p }}</span><span style="color:var(--up)">→ {{ r.t }}</span><span style="color:var(--down)">stop {{ r.s }}</span><span style="color:var(--mute)">{{ r.rr }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        <div style="flex:1 1 300px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:8px">
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)">What changed since your last visit</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint)">{{ chg.since }}</span>
+          <sc-for list="{{ chg.rows }}" as="c" hint-placeholder-count="0">
+            <div onClick="{{ c.open }}" style="display:flex;align-items:center;gap:8px;padding:5px 0;border-top:1px solid var(--line);cursor:pointer">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;min-width:58px">{{ c.sym }}</span>
+              <span style="{{ c.fromStyle }}">{{ c.from }}</span><span style="color:var(--faint)">→</span><span style="{{ c.toStyle }}">{{ c.to }}</span>
+              <span style="flex:1;text-align:right;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute)">{{ c.px }}</span>
+            </div>
+          </sc-for>
+          <span style="font-size:11.5px;color:var(--mute);line-height:1.45">{{ chg.note }}</span>
+          <span style="font-size:10.5px;color:var(--faint);line-height:1.45">Get these as Telegram alerts: open the Divergence bot and send /start, then /add your tickers.</span>
+        </div>
+      </div>
+    </sc-if>
     <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:stretch">
       <div style="flex:2 1 620px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px">
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
@@ -3220,6 +3260,8 @@ class Component extends DCLogic {
     }
     const I = await get('data/idx.json');
     if (I && I.idx && !this.dead) { const merged = Object.assign({}, I.idx, this.state.idx || {}); Object.keys(I.idx).forEach(s => { const a = I.idx[s], b = merged[s]; if (!b || !b.t || (a.t[a.t.length - 1] >= b.t[b.t.length - 1])) merged[s] = a; }); this.setState({ idx: merged, idxAt: Date.now() }); }
+    const BF = await get('data/brief.json'), SG = await get('data/signals.json');
+    if (!this.dead && (BF || SG)) this.setState({ pubBrief: BF, pubSigs: SG });
     const B = await get('data/bars.json');
     if (B && B.bars && !this.dead) {
       this.setState(s0 => {
@@ -3234,6 +3276,38 @@ class Component extends DCLogic {
         return n ? { bars } : null;
       });
     }
+  }
+  briefVals() {
+    const st = this.state, BF = st.pubBrief, SG = st.pubSigs, M = "font-family:'JetBrains Mono',monospace;";
+    const $ = v => v == null ? '—' : money(v), pc = v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+    const RL = { bullCalm: 'Uptrend · calm', bullVol: 'Uptrend · volatile', bearCalm: 'Downtrend · calm', bearVol: 'Downtrend · volatile' };
+    const open = s => () => { if (!ASSETS.find(a => a.sym === s)) this.adopt({ sym: s, name: s, yh: s, kind: 'stock' }); this.setState({ sel: s, detail: true }); };
+    let bf = { show: false };
+    if (BF) {
+      const am = BF.am && BF.updated && Date.parse(BF.am.updated) > Date.parse(BF.updated) ? BF.am : null;
+      const fut = am && am.futures ? Object.entries(am.futures).map(([s, q]) => { const ch = q.prev ? (q.p / q.prev - 1) * 100 : null; return { t: ({ 'ES=F': 'S&P fut', 'NQ=F': 'Nasdaq fut', 'YM=F': 'Dow fut', 'RTY=F': 'Russell fut', '^VIX': 'VIX', 'BTC-USD': 'Bitcoin', 'CL=F': 'Oil', 'GC=F': 'Gold' })[s] + ' ' + (ch != null ? pc(ch) : $(q.p)), style: M + 'font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:4px;background:var(--panel2);color:' + (ch == null ? 'var(--text)' : ch >= 0 ? 'var(--up)' : 'var(--down)') }; }) : [];
+      const w = new Date(am ? am.updated : BF.updated);
+      bf = { show: true, title: am ? 'Morning brief' : 'Evening brief', when: w.toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' · updated automatically',
+        reg: BF.reg ? 'Market: ' + RL[BF.reg] : '', regChg: BF.regPrev ? 'changed from ' + RL[BF.regPrev] : '', regChgStyle: M + 'font-size:10.5px;font-weight:700;color:var(--warn)',
+        stats: (BF.spCh != null ? 'SPY ' + pc(BF.spCh) + ' · ' : '') + (BF.nb != null ? BF.nb + ' BUY / ' + BF.ns + ' SELL' : ''),
+        working: BF.working && BF.working.length ? 'Working in this market: ' + BF.working.join(' · ') : '', fut,
+        bestTitle: (BF.best || []).length ? (am ? 'SETUPS TO WATCH AT THE OPEN' : 'BEST SETUPS FROM TODAY’S CLOSE') : 'NO CLEAN BUY SETUPS WITH R:R ≥ 2 TODAY',
+        best: (BF.best || []).map(b => ({ sym: b.s, p: $(b.p), t: $(b.target), s: $(b.stop), rr: 'R:R 1:' + b.rr.toFixed(1), open: open(b.s) })) };
+    }
+    let chg = { since: '', rows: [], note: '' };
+    if (SG && SG.sigs) {
+      const prev = lsGet('divergence.lastvisit.v1', null), mine = new Set((st.favs || []).concat(Object.keys(HOLDINGS || {})));
+      ((st.pf && st.pf.list) || []).forEach(p => Object.keys(p.pos || {}).forEach(s => mine.add(s)));
+      if (prev && prev.sigs) {
+        const rows = Object.keys(SG.sigs).filter(s => prev.sigs[s] && prev.sigs[s] !== SG.sigs[s].a).map(s => ({ s, a: prev.sigs[s], b: SG.sigs[s].a, mine: mine.has(s), p: SG.sigs[s].p }))
+          .sort((x, y) => (y.mine - x.mine) || ((y.b !== 'HOLD') - (x.b !== 'HOLD'))).slice(0, 10);
+        const tone = a => M + 'font-size:10px;font-weight:700;color:' + (a === 'BUY' ? 'var(--up)' : a === 'SELL' ? 'var(--down)' : 'var(--mute)');
+        chg = { since: 'Since ' + new Date(prev.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }), rows: rows.map(r => ({ sym: r.s + (r.mine ? ' ★' : ''), from: r.a, to: r.b, fromStyle: tone(r.a), toStyle: tone(r.b), px: $(r.p), open: open(r.s) })),
+          note: rows.length ? '★ = in your favourites or portfolio.' : 'No signal changes since your last visit.' };
+      } else chg = { since: '', rows: [], note: 'First visit on this browser: changes will show here from your next visit.' };
+      if (!this.visitSaved) { this.visitSaved = true; const snap = {}; Object.entries(SG.sigs).forEach(([s, g]) => { snap[s] = g.a; }); setTimeout(() => lsSet('divergence.lastvisit.v1', { at: Date.now(), sigs: snap }), 60000); }
+    }
+    return { bf, chg };
   }
   async idxLive() {
     if (this.dead || this.idxLiveBusy || !this.state.idx) return;
@@ -5187,7 +5261,7 @@ class Component extends DCLogic {
   renderVals() {
     const st = this.state, key = st.detail && st.sel ? st.sel + '|' + (st.intraIv || '15m') : null;
     if (key !== this.openedKey) { this.openedKey = key; if (key) { const s = st.sel; setTimeout(() => { try { this.termOpen(s); } catch (e) { /* keep panel usable */ } }, 0); } }
-    return Object.assign(this.baseVals(), this.terminal(), this.intraVals(), this.fundVals(), this.cryptoVals(), this.indiaVals(), this.calVals());
+    return Object.assign(this.baseVals(), this.terminal(), this.intraVals(), this.fundVals(), this.cryptoVals(), this.indiaVals(), this.calVals(), this.briefVals());
   }
   spyDays() {
     const st = this.state, b = st.bars.SPY, d = st.idx && st.idx['^GSPC'];
@@ -5277,7 +5351,7 @@ class Component extends DCLogic {
     }
     return {
       calRows: rows, calEmpty: !C,
-      calStatus: st.calRunning ? 'Recalibrating now…' : C && C.source === 'server' ? 'Calibrated automatically on the server · ' + new Date(this.calServer || C.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' · ' + C.stocks + ' stocks · runs every weekday after the close' : C ? 'Last run ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + ' · ' + C.stocks + ' stocks · runs once per trading day' : st.calWait != null ? 'Waiting for daily history: ' + st.calWait + ' of 40 stocks loaded' : 'Waiting for daily history to load',
+      calStatus: st.calRunning ? 'Recalibrating now…' : C && C.source === 'server' ? 'Calibrated automatically on the server · ran ' + new Date(this.calServer || C.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) + ' · uses closing prices up to ' + new Date(C.day * 864e5 + 16 * 3600e3).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) + ' · ' + C.stocks + ' stocks · runs every weekday after the close' : C ? 'Last run ' + d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }) + ' · ' + C.stocks + ' stocks · runs once per trading day' : st.calWait != null ? 'Waiting for daily history: ' + st.calWait + ' of 40 stocks loaded' : 'Waiting for daily history to load',
       calRegime: 'Market filter: ' + (R.bear ? 'S&P 500 below its 200-day average' : 'S&P 500 above its 200-day average') + (R.vixHi ? ' · VIX above 25' : '') + (R.bear || R.vixHi ? ' → buy scores reduced' : ' → no penalty'),
       calRegimeStyle: M + 'font-size:11px;font-weight:700;color:' + (R.bear || R.vixHi ? 'var(--down)' : 'var(--up)'),
       calLog: C && C.hist ? C.hist.slice().reverse().slice(0, 8).map(l => ({ t: new Date((l.day * 864e5) + 4 * 3600e3).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) + ' · ' + l.label + ': ' + (l.id === 'regime' ? l.why : (l.from > 0 ? '+' : '') + l.from.toFixed(1) + ' → ' + (l.to > 0 ? '+' : '') + l.to.toFixed(1) + ' (' + l.why + ')') })) : [],
