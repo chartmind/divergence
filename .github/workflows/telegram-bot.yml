@@ -1,0 +1,43 @@
+name: Telegram bot
+on:
+  schedule:
+    - cron: '*/15 13-21 * * 1-5'   # every 15 min in US market hours
+    - cron: '0 */2 * * *'          # every 2 hours otherwise (replies to commands)
+    - cron: '0 12 * * 1-5'         # morning brief ~8am New York
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'poll, am or pm'
+        default: 'poll'
+permissions:
+  contents: write
+concurrency:
+  group: divergence-data
+  cancel-in-progress: false
+jobs:
+  bot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run bot
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          BOT_INVITE: ${{ secrets.BOT_INVITE }}
+        run: |
+          MODE="${{ github.event.inputs.mode }}"
+          if [ -z "$MODE" ]; then
+            if [ "${{ github.event.schedule }}" = "0 12 * * 1-5" ]; then MODE=am; else MODE=poll; fi
+          fi
+          node bot.mjs "$MODE"
+      - name: Save bot state
+        run: |
+          git config user.name "divergence-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -A data .botstate || true
+          git diff --cached --quiet || git commit -m "Bot update $(date -u +%FT%H:%M)"
+          git pull --rebase --autostash || true
+          git push

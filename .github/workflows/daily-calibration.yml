@@ -1,26 +1,34 @@
 name: Daily calibration
 on:
   schedule:
-    - cron: '35 20 * * 1-5'
-    - cron: '0 11 * * 1-5'
+    - cron: '35 20 * * 1-5'   # ~4:35pm New York, after the close
   workflow_dispatch: {}
 permissions:
   contents: write
+concurrency:
+  group: divergence-data
+  cancel-in-progress: false
 jobs:
   calibrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
       - name: Run calibration
         run: node calibrate.mjs
-      - name: Publish data
+      - name: Evening brief and signal-change alerts
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          BOT_INVITE: ${{ secrets.BOT_INVITE }}
+        run: node bot.mjs pm
+      - name: Publish
         run: |
           git config user.name "divergence-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add data
+          git add -A data .botstate || true
           git diff --cached --quiet || git commit -m "Daily calibration $(date -u +%F)"
+          git pull --rebase --autostash || true
           git push
