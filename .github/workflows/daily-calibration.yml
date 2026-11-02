@@ -16,7 +16,7 @@ jobs:
         with:
           node-version: 20
       - name: Run calibration
-        run: node server/calibrate.mjs
+        run: node calibrate.mjs
       - name: Publish data
         run: |
           git config user.name "divergence-bot"
