@@ -3,7 +3,7 @@ on:
   schedule:
     - cron: '*/15 13-21 * * 1-5'   # every 15 min in US market hours
     - cron: '0 */2 * * *'          # every 2 hours otherwise (replies to commands)
-    - cron: '0 12 * * 1-5'         # morning brief ~8am New York
+    - cron: '0 13 * * 1-5'         # morning brief: 8am New York in winter, 9am in summer
   workflow_dispatch:
     inputs:
       mode:
@@ -23,6 +23,17 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      - name: Check Telegram token and clear any webhook
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+        run: |
+          if [ -z "$TELEGRAM_TOKEN" ]; then
+            echo "::error::TELEGRAM_TOKEN secret is missing. Add it under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          ME=$(curl -s "https://api.telegram.org/bot${TELEGRAM_TOKEN}/getMe")
+          echo "$ME" | grep -q '"ok":true' || { echo "::error::Telegram rejected the token: $ME"; exit 1; }
+          curl -s "https://api.telegram.org/bot${TELEGRAM_TOKEN}/deleteWebhook" > /dev/null
       - name: Run bot
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
@@ -30,10 +41,11 @@ jobs:
         run: |
           MODE="${{ github.event.inputs.mode }}"
           if [ -z "$MODE" ]; then
-            if [ "${{ github.event.schedule }}" = "0 12 * * 1-5" ]; then MODE=am; else MODE=poll; fi
+            if [ "${{ github.event.schedule }}" = "0 13 * * 1-5" ]; then MODE=am; else MODE=poll; fi
           fi
           node bot.mjs "$MODE"
       - name: Save bot state
+        if: always()
         run: |
           git config user.name "divergence-bot"
           git config user.email "bot@users.noreply.github.com"
