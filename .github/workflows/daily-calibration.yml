@@ -1,7 +1,8 @@
 name: Daily calibration
 on:
   schedule:
-    - cron: '35 20 * * 1-5'   # ~4:35pm New York, after the close
+    - cron: '35 21 * * 1-5'   # 4:35pm New York in winter, 5:35pm in summer: always after the close
+    - cron: '0 11 * * 1-5'    # backup run before the open, in case the evening run was skipped
   workflow_dispatch: {}
 permissions:
   contents: write
@@ -11,7 +12,7 @@ concurrency:
 jobs:
   calibrate:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,11 +21,14 @@ jobs:
       - name: Run calibration
         run: node calibrate.mjs
       - name: Evening brief and signal-change alerts
+        if: github.event.schedule != '0 11 * * 1-5'
+        continue-on-error: true
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           BOT_INVITE: ${{ secrets.BOT_INVITE }}
         run: node bot.mjs pm
       - name: Publish
+        if: always()
         run: |
           git config user.name "divergence-bot"
           git config user.email "bot@users.noreply.github.com"
