@@ -81,6 +81,13 @@ a:hover{color:oklch(0.44 0.12 165)}
     </sc-for>
   </div>
 
+  <sc-if value="{{ macroShow }}" hint-placeholder-val="{{ false }}">
+    <div style="{{ macroStyle }}"><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;letter-spacing:.08em">{{ macroTitle }}</span><span style="font-size:12px;line-height:1.45">{{ macroText }}</span></div>
+  </sc-if>
+  <sc-if value="{{ macroExpShow }}" hint-placeholder-val="{{ false }}">
+    <div style="{{ macroExpStyle }}"><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:700;letter-spacing:.08em">{{ macroExpTitle }}</span><span style="font-size:12px;line-height:1.45">{{ macroExpText }}</span></div>
+  </sc-if>
+
   <div style="padding:0 16px 40px;display:flex;flex-direction:column;gap:12px">
     <div style="display:flex;gap:2px;overflow-x:auto;border-bottom:1px solid var(--line);margin:0 -16px;padding:0 12px">
       <sc-for list="{{ tabSeg }}" as="t" hint-placeholder-count="7"><div onClick="{{ t.pick }}" style="{{ t.style }}">{{ t.label }}</div></sc-for>
@@ -1451,6 +1458,32 @@ const LEVERAGED = /(UP|DOWN|BULL|BEAR)$/;
 let ASSETS = EQUITIES.slice();
 const KEEP_KEY = 'divergence.screener.keep.v1', KEEP_IN_KEY = 'divergence.india.keep.v1', SCREENER_CAP = 250;
 const GICS_SEC = { 'Information Technology': 'tech', 'Communication Services': 'comm', 'Consumer Discretionary': 'disc', 'Consumer Staples': 'stap', 'Financials': 'fin', 'Health Care': 'health', 'Energy': 'energy', 'Industrials': 'indu', 'Materials': 'mat', 'Utilities': 'util', 'Real Estate': 're' };
+// ---- macro-day check: reads how the market is reacting right now (futures, VIX, 10Y yield) ----
+const MACRO_RE = /jobs report|payrolls?|nonfarm|unemployment|jobless|employment|\bCPI\b|inflation|\bPCE\b|\bFed\b|FOMC|rate (cut|hike)|tariff|\bGDP\b/i;
+function macroRead(q) {
+  const g = s => q && q[s] && isFinite(q[s].ch) ? q[s].ch : null;
+  const fut = [g('ES=F'), g('NQ=F')].filter(v => v != null), spx = g('^GSPC');
+  const m = fut.length ? fut.reduce((a, b) => a + b, 0) / fut.length : spx;
+  const vx = q && q['^VIX'], vixCh = vx && isFinite(vx.ch) ? vx.ch : null, vixP = vx && isFinite(vx.p) ? vx.p : null, y10 = g('^TNX');
+  if (m == null) return { level: 'normal', m: null, vixCh, vixP, y10 };
+  let level = 'normal';
+  if (m <= -2 || (m <= -1.2 && vixCh != null && vixCh >= 15) || (m < 0 && vixP != null && vixP >= 30 && vixCh != null && vixCh >= 10)) level = 'shock';
+  else if (m <= -1 || (m < 0 && vixCh != null && vixCh >= 10) || (m < 0 && vixP != null && vixP >= 25)) level = 'caution';
+  else if (m >= 1 && (vixCh == null || vixCh <= -3)) level = 'rally';
+  return { level, m, vixCh, vixP, y10 };
+}
+// Monthly / quarterly options expiry (third Friday) when it falls within the next 0 to 4 days. Weekly expiries are skipped.
+function expiryInfo(now) {
+  const et = new Date(now.toLocaleString('en-US', { timeZone: 'America/New_York' }));
+  const day0 = Date.UTC(et.getFullYear(), et.getMonth(), et.getDate());
+  for (let k = 0; k <= 4; k++) {
+    const d = new Date(day0 + k * 864e5);
+    if (d.getUTCDay() !== 5 || (k === 0 && et.getHours() >= 16)) continue;
+    if (Math.ceil(d.getUTCDate() / 7) !== 3) return null;
+    return { k, quarterly: [2, 5, 8, 11].indexOf(d.getUTCMonth()) >= 0, label: d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' }) };
+  }
+  return null;
+}
 function loadKeep() { try { const k = JSON.parse(localStorage.getItem(KEEP_KEY)); return k && k.syms && k.syms.length ? k : null; } catch (e) { return null; } }
 const HOLDINGS = { BTC: { qty: 0.42, cost: 54200 }, ETH: { qty: 4.1, cost: 2740 }, NVDA: { qty: 38, cost: 96.4 }, SOL: { qty: 55, cost: 131 } };
 const RANGES = [['1M', 22], ['3M', 64], ['6M', 128], ['1Y', 252], ['2Y', 460]];
@@ -2148,6 +2181,18 @@ function analyzeOptions(d, spotIn) {
     add('Max pain', money(mp), g > 0.02 ? 0.3 : g < -0.02 ? -0.3 : 0,
       Math.abs(g) <= 0.02 ? 'Price is near the pin level' : 'Pulls price ' + (g > 0 ? 'up ' : 'down ') + Math.abs(g * 100).toFixed(1) + '% into expiry');
   }
+  // Options expiring within 4 days: the pin level matters most in expiry week, but the main chain above skips expiries under 5 days.
+  const pinEx = exps.find(e => e.days >= -0.5 && e.days < 5 && e.rows.length > 10);
+  let pinK = null;
+  if (pinEx && pinEx !== ex) {
+    let bp = Infinity;
+    [...new Set(pinEx.rows.map(r => r.k))].forEach(S => { let pay = 0; pinEx.rows.forEach(r => { pay += r.oi * (r.call ? Math.max(0, S - r.k) : Math.max(0, r.k - S)); }); if (pay < bp) { bp = pay; pinK = S; } });
+  }
+  if (pinK) {
+    const g = (pinK - spot) / spot, dd = Math.max(0, Math.round(pinEx.days));
+    add('Expiry pin (' + (dd === 0 ? 'today' : dd + 'd') + ')', money(pinK), g > 0.015 ? 0.3 : g < -0.015 ? -0.3 : 0,
+      Math.abs(g) <= 0.015 ? 'Price is near the pin level' : 'Expiry pulls price ' + (g > 0 ? 'up ' : 'down ') + Math.abs(g * 100).toFixed(1) + '% toward it');
+  }
   const dir = Math.max(-1.5, Math.min(1.5, parts.reduce((s, p) => s + p.s, 0)));
   const expLabel = new Date(ex.exp).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
   const dNow = new Date(), fri = Date.UTC(dNow.getUTCFullYear(), dNow.getUTCMonth(), dNow.getUTCDate() + ((5 - dNow.getUTCDay() + 7) % 7), 23);
@@ -2161,7 +2206,7 @@ function analyzeOptions(d, spotIn) {
   const pe = exps.find(e => e.days >= 7 && e.days <= 24 && e.rows.length > 10) || exps.find(e => e.days >= 2 && e.rows.length > 10) || exps[0];
   const chainPick = pe ? { label: fmtE(pe), days: pe.days, exp: pe.exp, rows: pe.rows.filter(r => r.mid > 0).map(r => ({ call: r.call, k: r.k, mid: r.mid, delta: r.delta, vol: r.vol, oi: r.oi })) } : null;
   longU.sort((a, b) => b.prem - a.prem);
-  return { longU: longU.slice(0, 8), dir, parts, pcr, expLabel, atmIv: atm ? atm.iv * 100 : null, at: Date.now(), week, chainPick, spot, maxPain: mp, callWall: calls ? calls.k : null, putWall: puts ? puts.k : null };
+  return { longU: longU.slice(0, 8), dir, parts, pcr, expLabel, atmIv: atm ? atm.iv * 100 : null, at: Date.now(), week, chainPick, spot, maxPain: mp, pinK, callWall: calls ? calls.k : null, putWall: puts ? puts.k : null };
 }
 
 const CAPS = (() => { try { return JSON.parse(localStorage.getItem('divergence.caps.v1')) || {}; } catch (e) { return {}; } })();
@@ -3739,6 +3784,21 @@ class Component extends DCLogic {
     }
   }
 
+  macroView() {
+    const st = this.state, M = macroRead(st.quotes), X = expiryInfo(new Date());
+    const f = v => v == null ? '—' : (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+    const cut = Date.now() / 1000 - 36 * 3600, h = (st.mNews || []).find(x => x.t >= cut && MACRO_RE.test(x.title));
+    const num = 'S&P/Nasdaq futures ' + f(M.m) + ' · VIX ' + (M.vixP != null ? M.vixP.toFixed(1) : '—') + ' (' + f(M.vixCh) + ') · 10Y yield ' + f(M.y10) + (h ? ' · Headline: ' + h.title : '');
+    const box = (bg, bd) => 'display:flex;flex-direction:column;gap:4px;margin:10px 16px 0;padding:10px 14px;border-radius:8px;background:' + bg + ';border:1px solid ' + bd + ';color:var(--text)';
+    let show = false, title = '', text = '', style = '';
+    if (M.level === 'shock') { show = true; title = 'MACRO SHOCK · NEW BUYS ON HOLD'; text = num + '. US-stock BUY signals are held at HOLD, except stocks trading green. This lifts when futures and the VIX settle. SELL and HOLD signals are unchanged.'; style = box('rgba(220,60,50,.14)', 'rgba(220,60,50,.55)'); }
+    else if (M.level === 'caution') { show = true; title = 'MACRO CAUTION · BE SELECTIVE'; text = num + '. Signals are unchanged for now, but size new buys carefully. It becomes a Shock if the selloff deepens.'; style = box('rgba(230,160,40,.14)', 'rgba(230,160,40,.55)'); }
+    else if (M.level === 'rally') { show = true; title = 'RISK-ON · NEWS IS BEING BOUGHT'; text = num + '. BUY signals are not restricted.'; style = box('rgba(60,180,120,.12)', 'rgba(60,180,120,.5)'); }
+    const expShow = !!X;
+    const expText = X ? (X.quarterly ? 'Quarterly options expiry (triple witching) ' : 'Monthly options expiry ') + (X.k === 0 ? 'today' : X.label) + '. Heavy open interest tends to pull stocks toward their max-pain strike into the close and then release after expiry, so expect pinning and sharper late moves. Each stock\'s max pain and expiry pin are shown in its options view. The effect is a tendency, not a rule, and is strongest on stocks with large open interest.' : '';
+    return { macroShow: show, macroTitle: title, macroText: text, macroStyle: style, macroExpShow: expShow, macroExpTitle: X ? (X.quarterly ? 'TRIPLE WITCHING' : 'MONTHLY EXPIRY') + ' · MAX PAIN DAY' : '', macroExpText: expText, macroExpStyle: box('var(--panel)', 'var(--line)') };
+  }
+
   async loadMovers() {
     if (this.moversLoading || (this.state.movers && this.state.movers.length)) return;
     this.moversLoading = true;
@@ -3918,10 +3978,16 @@ class Component extends DCLogic {
     const b = this.state.bars[sym]; if (!b) return null;
     const q = this.state.quotes[sym];
     const oo = this.state.opts[sym];
-    const key = sym + '|' + horizon + '|' + b.length + '|' + (q ? q.p : b[b.length - 1].c) + '|' + (oo ? oo.at : 0);
+    const lvl = macroRead(this.state.quotes).level;
+    const key = sym + '|' + horizon + '|' + b.length + '|' + (q ? q.p : b[b.length - 1].c) + '|' + (oo ? oo.at : 0) + '|' + lvl;
     this.cache = this.cache || {};
     if (this.cache[key]) return this.cache[key];
     let out = this.computeSignal(sym, horizon);
+    if (out && out.action === 'BUY' && lvl === 'shock') {
+      // Macro shock: hold new US-stock buys unless the stock is holding up (green) while the market falls.
+      const asset = ASSETS.find(x => x.sym === sym);
+      if (asset && (asset.kind === 'stock' || asset.kind === 'small') && !(q && q.ch >= 0)) out = Object.assign({}, out, { action: 'HOLD', gate: 'Buy on hold: market is selling off on macro news (futures and VIX). Stocks holding up green can stay BUY.', reasons: [{ t: 'Macro shock: new buys on hold' }].concat(out.reasons || []).slice(0, 5) });
+    }
     if (out && out.action === 'BUY' && this.cal && this.cal.reg) {
       const b = this.state.bars[sym], R = b ? rsi(b.map(x => x.c), 14) : null, rr = R ? R[R.length - 1] : null;
       if (rr != null && rr < 38 && regPts(this.cal, 'oversold') + regPts(this.cal, 'bbLow') < -0.5) out = Object.assign({}, out, { action: 'HOLD', gate: 'Buy blocked: buying dips has lost money in the current market (' + CAL_REG_LBL[this.cal.reg] + ')', reasons: [{ t: 'Dip-buying off in this market' }].concat(out.reasons || []).slice(0, 5) });
@@ -5950,7 +6016,7 @@ class Component extends DCLogic {
       sigSeg: seg([['combined', 'Combined'], ['tech', 'Technical']], sigMode, v => this.setState({ sigMode: v })),
       sigNote: sigMode === 'combined' ? 'Technical signal + EMA trend + RSI extremes + options flow + news themes + quarterly setups + revenue growth + sector breadth.' : 'RSI divergence, MACD and EMA 10/50/100/200 signal only.',
       topBuys, topSells,
-      fltSeg, tblHead, tblRows, gridCols, tblCaption: tTot + ' stocks', scrRefresh: () => this.refreshScreener(), scrRefreshLabel: st.scrBusy ? 'Scanning…' : '↻ Refresh scan', scrMsg: st.scrMsg || '',
+      fltSeg, tblHead, tblRows, gridCols, tblCaption: tTot + ' stocks', ...this.macroView(), scrRefresh: () => this.refreshScreener(), scrRefreshLabel: st.scrBusy ? 'Scanning…' : '↻ Refresh scan', scrMsg: st.scrMsg || '',
       scrRefreshStyle: 'padding:4px 10px;border-radius:5px;font-size:11px;font-weight:600;border:1px solid var(--line);background:var(--panel2);color:var(--text);white-space:nowrap;cursor:' + (st.scrBusy ? 'default' : 'pointer') + ';opacity:' + (st.scrBusy ? '.6' : '1'), tblMore: tTot > (st.termLimit || 40), showMore: () => this.setState(s => ({ termLimit: (s.termLimit || 40) + 40 })),
       newsSeg: seg([['All', 'All'], ['Financial', 'Financial'], ['Geopolitical', 'Geopolitical']], ncat, v => this.setState({ newsCatT: v })), newsRows,
       themeRows, themeProg: tLoaded < THEMES.length ? 'reading ' + tLoaded + '/' + THEMES.length : THEMES.length + ' themes',
