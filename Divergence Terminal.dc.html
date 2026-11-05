@@ -228,6 +228,8 @@ a:hover{color:oklch(0.44 0.12 165)}
         </sc-for>
       </div>
       <span style="font-size:11.5px;color:var(--mute)">{{ scrAssetNote }}</span>
+      <div onClick="{{ scrRefresh }}" style="{{ scrRefreshStyle }}">{{ scrRefreshLabel }}</div>
+      <span style="font-size:11px;color:var(--mute)">{{ scrMsg }}</span>
     </div>
     <sc-if value="{{ scrStocks }}" hint-placeholder-val="{{ true }}">
     <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;min-width:0">
@@ -1447,6 +1449,9 @@ function saveFavs(v) { try { localStorage.setItem(FAV_KEY, JSON.stringify(v)); }
 const STABLE = /^(USDC|FDUSD|TUSD|BUSD|DAI|USDP|EUR|USDT|PAXG|WBTC|WBETH|BTTC|USD1|USDE|PYUSD|USDS|USTC|EURI|AEUR|XUSD|RLUSD|BFUSD)$/;
 const LEVERAGED = /(UP|DOWN|BULL|BEAR)$/;
 let ASSETS = EQUITIES.slice();
+const KEEP_KEY = 'divergence.screener.keep.v1', KEEP_IN_KEY = 'divergence.india.keep.v1', SCREENER_CAP = 250;
+const GICS_SEC = { 'Information Technology': 'tech', 'Communication Services': 'comm', 'Consumer Discretionary': 'disc', 'Consumer Staples': 'stap', 'Financials': 'fin', 'Health Care': 'health', 'Energy': 'energy', 'Industrials': 'indu', 'Materials': 'mat', 'Utilities': 'util', 'Real Estate': 're' };
+function loadKeep() { try { const k = JSON.parse(localStorage.getItem(KEEP_KEY)); return k && k.syms && k.syms.length ? k : null; } catch (e) { return null; } }
 const HOLDINGS = { BTC: { qty: 0.42, cost: 54200 }, ETH: { qty: 4.1, cost: 2740 }, NVDA: { qty: 38, cost: 96.4 }, SOL: { qty: 55, cost: 131 } };
 const RANGES = [['1M', 22], ['3M', 64], ['6M', 128], ['1Y', 252], ['2Y', 460]];
 
@@ -2810,7 +2815,7 @@ class Component extends DCLogic {
     return v;
   }
 
-  componentDidMount() { this.mount0(); this.loadPublished(); this.pubT = setInterval(() => this.loadPublished(), 30 * 60e3); setTimeout(() => this.idxStep && this.idxStep(), 2000); this.idxStepT = setInterval(() => { try { this.idxStep && this.idxStep(); } catch (e) { /* retry */ } }, 5000); setTimeout(() => this.cryptoStream(), 1500); this.idxTimer = setInterval(() => this.idxLive(), 15000); this.cFlushT = setInterval(() => { if (this.pendingQ && !this.dead) { const q = this.pendingQ; this.pendingQ = null; this.cPush = Date.now(); this.pushCryptoPx(q); } }, 2500); this.cal = lsGet(CAL_KEY, null); this.calTimer = setInterval(() => this.calMaybe(), 60000); setTimeout(() => this.calMaybe(), 45000); if (this.state.scrAsset === 'crypto') this.cryptoBoot(); if (this.state.scrAsset === 'india') this.indiaBoot(); this.onVis = () => { if (document.visibilityState === 'visible') { try { this.growStep().catch(() => {}); this.liveStep().catch(() => {}); this.intraStep().catch(() => {}); } catch (e) { /* ignore */ } } }; document.addEventListener('visibilitychange', this.onVis); }
+  componentDidMount() { try { this.applyKeep(); this.applyKeepIndia(); } catch (e) { console.warn('screener keep', e && e.message); } this.mount0(); this.loadPublished(); this.pubT = setInterval(() => this.loadPublished(), 30 * 60e3); setTimeout(() => this.idxStep && this.idxStep(), 2000); this.idxStepT = setInterval(() => { try { this.idxStep && this.idxStep(); } catch (e) { /* retry */ } }, 5000); setTimeout(() => this.cryptoStream(), 1500); this.idxTimer = setInterval(() => this.idxLive(), 15000); this.cFlushT = setInterval(() => { if (this.pendingQ && !this.dead) { const q = this.pendingQ; this.pendingQ = null; this.cPush = Date.now(); this.pushCryptoPx(q); } }, 2500); this.cal = lsGet(CAL_KEY, null); this.calTimer = setInterval(() => this.calMaybe(), 60000); setTimeout(() => this.calMaybe(), 45000); if (this.state.scrAsset === 'crypto') this.cryptoBoot(); if (this.state.scrAsset === 'india') this.indiaBoot(); this.onVis = () => { if (document.visibilityState === 'visible') { try { this.growStep().catch(() => {}); this.liveStep().catch(() => {}); this.intraStep().catch(() => {}); } catch (e) { /* ignore */ } } }; document.addEventListener('visibilitychange', this.onVis); }
   shouldComponentUpdate(np, ns) {
     if (np !== this.props) return true;
     const s = this.state, ui = ['inFilter', 'inSort', 'inLimit', 'inSec', 'scrAsset', 'cFilter', 'cSort', 'cLimit', 'tab', 'shortF', 'sel', 'detail', 'termQ', 'termRes', 'theme', 'horizon', 'heatMetric', 'termFilter', 'termSort', 'termLimit', 'termRange', 'sigMode', 'newsCatT', 'f13Sel', 'gSort', 'gSize', 'gLim', 'confRR', 'acct', 'riskPct', 'toasts', 'alerts', 'journal', 'intraFilter', 'intraLimit', 'pf', 'pfSel'];
@@ -3129,6 +3134,7 @@ class Component extends DCLogic {
       const tail = cl.slice(-252), hi = Math.max.apply(null, tail), lo = Math.min.apply(null, tail);
       const q = st.quotes[a.sym], ch = q && q.ch != null ? q.ch : (cl[i] / cl[i - 1] - 1) * 100;
       const tags = [];
+      if (a.fresh) tags.push(['New in scan', 'acc']);
       if (BD.sig) tags.push([BD.sig.side === 'BUY' ? 'BB/DC buy' : 'BB/DC sell', BD.sig.side === 'BUY' ? 'up' : 'down']);
       if (cl[i] >= hi * 0.995) tags.push(['New high', 'up']); if (cl[i] <= lo * 1.005) tags.push(['New low', 'down']);
       if (R[i] < 30) tags.push(['Oversold', 'up']); else if (R[i] > 70) tags.push(['Overbought', 'down']);
@@ -3332,9 +3338,10 @@ class Component extends DCLogic {
       this.cBin = M; this.cBinAt = Date.now(); if (!this.dead) this.setState({ cTick: Date.now() });
     } catch (e) { this.cBinAt = Date.now(); }
   }
-  async loadCoinGecko() {
+  async loadCoinGecko(force) {
     if (this.cgBusy) return; this.cgBusy = true;
     const out = [];
+    const cgRow = c => [c.id, String(c.symbol || '').toUpperCase(), c.name, c.current_price, c.market_cap, c.market_cap_rank, c.fully_diluted_valuation, c.total_volume, c.price_change_percentage_24h_in_currency, c.price_change_percentage_7d_in_currency, c.price_change_percentage_30d_in_currency, c.price_change_percentage_1y_in_currency, c.circulating_supply, c.total_supply, c.max_supply, c.ath, c.ath_change_percentage];
     try {
       for (let pg = 1; pg <= 4; pg++) {
         let j = null;
@@ -3346,10 +3353,23 @@ class Component extends DCLogic {
           } catch (e) { await new Promise(z => setTimeout(z, 5000)); }
         }
         if (!j || !j.length) break;
-        j.forEach(c => out.push([c.id, String(c.symbol || '').toUpperCase(), c.name, c.current_price, c.market_cap, c.market_cap_rank, c.fully_diluted_valuation, c.total_volume, c.price_change_percentage_24h_in_currency, c.price_change_percentage_7d_in_currency, c.price_change_percentage_30d_in_currency, c.price_change_percentage_1y_in_currency, c.circulating_supply, c.total_supply, c.max_supply, c.ath, c.ath_change_percentage]));
+        j.forEach(c => out.push(cgRow(c)));
         this.cg = out.slice(); this.cgAt = Date.now();
         if (!this.dead) this.setState({ cTick: Date.now() });
         await new Promise(z => setTimeout(z, 3500));
+      }
+      if (force && out.length && !this.dead) {
+        // Refresh also pulls CoinGecko's trending coins, which can sit outside the top 1,000 by market cap.
+        try {
+          const tr = await fetch('https://api.coingecko.com/api/v3/search/trending').then(r => r.ok ? r.json() : null);
+          const have = {}; out.forEach(c => { have[c[0]] = 1; });
+          const ids = ((tr && tr.coins) || []).map(x => x.item && x.item.id).filter(id => id && !have[id]);
+          if (ids.length) {
+            const r2 = await fetch('https://api.coingecko.com/api/v3/coins/markets?vs_currency=usd&ids=' + ids.join(',') + '&per_page=50&sparkline=false&price_change_percentage=24h,7d,30d,1y');
+            ((r2.ok ? await r2.json() : []) || []).forEach(c => out.push(cgRow(c)));
+            this.cg = out.slice();
+          }
+        } catch (e) { /* trending is optional */ }
       }
       if (out.length) try { sessionStorage.setItem('divergence.cg.v1', JSON.stringify({ at: Date.now(), list: out })); } catch (e) { /* quota */ }
     } finally { this.cgBusy = false; if (!out.length) { this.cgFail = true; this.cgAt = Date.now() - 10 * 60e3; } if (!this.dead) this.setState({ cTick: Date.now() }); }
@@ -3401,7 +3421,7 @@ class Component extends DCLogic {
     const segS = on => 'padding:5px 10px;border-radius:5px;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap;' + (on ? 'background:var(--text);color:var(--bg)' : 'color:var(--mute)');
     const isC = st.scrAsset === 'crypto';
     const base = {
-      scrAssetSeg: [['stocks', 'US stocks'], ['india', 'India'], ['crypto', 'Crypto']].map(([id, label]) => ({ label, style: segS((st.scrAsset || 'stocks') === id), pick: () => { try { sessionStorage.setItem('divergence.scrAsset', id); } catch (e) { /* ignore */ } this.setState({ scrAsset: id }); if (id === 'crypto') this.cryptoBoot(); if (id === 'india') this.indiaBoot(); } })),
+      scrAssetSeg: [['stocks', 'US stocks'], ['india', 'India'], ['crypto', 'Crypto']].map(([id, label]) => ({ label, style: segS((st.scrAsset || 'stocks') === id), pick: () => { try { sessionStorage.setItem('divergence.scrAsset', id); } catch (e) { /* ignore */ } this.setState({ scrAsset: id, scrMsg: '' }); if (id === 'crypto') this.cryptoBoot(); if (id === 'india') this.indiaBoot(); } })),
       scrStocks: !isC && st.scrAsset !== 'india', scrCrypto: isC, scrIndia: st.scrAsset === 'india',
       scrAssetNote: st.scrAsset === 'india' ? 'NSE large and mid caps, in rupees, with the same buy/sell rules' : isC ? 'Top 1,000 coins, sorted by market cap. Type in the search bar to filter. Coins with no max supply (ETH, SOL) score low on scarcity, so they rarely appear in the hold picks' : 'US stocks scanned by the app',
       cHoldCards: [], cHoldEmpty: false, cHoldEmptyTxt: '', cHoldNote: '', cFltSeg: [], cHead: [], cRows: [], cGrid: '1fr', cCaption: '', cMore: false, cShowMore: () => {}
@@ -3545,6 +3565,178 @@ class Component extends DCLogic {
       })));
       this.setState({ searching: false, searchDone: true });
     }, 300);
+  }
+
+  protectedSyms() {
+    const st = this.state, p = {};
+    (st.favs || []).concat(Object.keys(HOLDINGS), [st.sel]).forEach(s => { if (s) p[s] = 1; });
+    try { ((st.pf && st.pf.list) || []).forEach(x => Object.keys(x.pos || {}).forEach(s => { p[s] = 1; })); } catch (e) { /* no portfolio */ }
+    return p;
+  }
+  // EQUITIES is what bootstrap() rebuilds ASSETS from, so a stock added here survives rescans.
+  addStock(x, fresh) {
+    if (EQUITIES.find(e => e.sym === x.s)) return false;
+    const a = { sym: x.s, name: x.n || x.s, yh: x.s, kind: 'stock' };
+    if (x.sid) a.sector = x.sid;
+    if (fresh) a.fresh = 1;
+    EQUITIES.push(a);
+    if (!ASSETS.find(z => z.sym === x.s)) ASSETS = ASSETS.concat([a]);
+    return true;
+  }
+  // On load, restore the list the last Refresh decided to keep.
+  applyKeep() {
+    const K = loadKeep(); if (!K) return;
+    const keep = {}; K.syms.forEach(x => { keep[x.s] = 1; this.addStock(x, false); });
+    const prot = this.protectedSyms(), gone = {};
+    for (let i = EQUITIES.length - 1; i >= 0; i--) {
+      const e = EQUITIES[i];
+      if ((e.kind === 'stock' || e.kind === 'small') && !keep[e.sym] && !prot[e.sym]) { gone[e.sym] = 1; EQUITIES.splice(i, 1); }
+    }
+    ASSETS = ASSETS.filter(a => !gone[a.sym]);
+  }
+  // Scan the server's wider universe plus today's Yahoo movers, then keep the strongest SCREENER_CAP stocks.
+  refreshScreener() {
+    const k = this.state.scrAsset;
+    return k === 'india' ? this.refreshIndia() : k === 'crypto' ? this.refreshCrypto() : this.refreshStocks();
+  }
+  async refreshStocks() {
+    if (this.scrBusy || this.dead) return;
+    this.scrBusy = true;
+    const say = t => { if (!this.dead) this.setState({ scrMsg: t, scrBusy: true }); };
+    const isStk = a => a.kind === 'stock' || a.kind === 'small';
+    try {
+      say('Loading the latest server scan…');
+      EQUITIES.forEach(e => { delete e.fresh; });
+      const U = await fetch('data/universe.json?v=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
+      let added = 0;
+      if (U && U.symbols) {
+        await this.loadPublished();
+        U.symbols.forEach(x => { if (this.addStock({ s: x.s, n: x.n, sid: GICS_SEC[x.sec] }, true)) added++; });
+      }
+      say('Checking today\'s Yahoo movers…');
+      let live = 0;
+      for (const id of ['day_gainers', 'most_actives', 'day_losers']) {
+        const q = await yahooScreener(id, 25);
+        (q || []).forEach(x => {
+          const s = String(x.symbol || '').toUpperCase();
+          if (!/^[A-Z]{1,5}(-[A-Z])?$/.test(s) || (x.quoteType && x.quoteType !== 'EQUITY') || live >= 40) return;
+          if (this.addStock({ s, n: x.shortName || x.longName || s }, true)) { live++; added++; if (!this.state.bars[s]) this.queue.unshift(s); }
+        });
+      }
+      if (live) this.startWorkers();
+      if (!added && !U) { say('No server scan found yet. Run the Daily calibration job on GitHub first.'); return; }
+      say('Scoring ' + ASSETS.filter(isStk).length + ' stocks…');
+      this.termStats = null; this.setState({ calTick: Date.now(), universeSize: ASSETS.length });
+      await new Promise(r => setTimeout(r, 2500));
+      const L = (this.termStats && this.termStats.list) || [];
+      if (U && L.length) {
+        // Rank by signal strength (strong BUY or strong SELL). Favourites, holdings, portfolio and the open stock are always kept;
+        // stocks with no price history yet are kept until they can be scored.
+        const prot = this.protectedSyms(), keep = {}, scoredSyms = {};
+        let n = 0;
+        L.forEach(x => { scoredSyms[x.sym] = 1; });
+        Object.keys(prot).forEach(s => { if (EQUITIES.find(e => e.sym === s && isStk(e))) { keep[s] = 1; n++; } });
+        L.slice().sort((a, b) => Math.abs(b.conv || 0) - Math.abs(a.conv || 0)).forEach(x => { if (n < SCREENER_CAP && !keep[x.sym]) { keep[x.sym] = 1; n++; } });
+        let dropped = 0; const gone = {};
+        for (let i = EQUITIES.length - 1; i >= 0; i--) {
+          const e = EQUITIES[i];
+          if (isStk(e) && !keep[e.sym] && scoredSyms[e.sym] && !prot[e.sym]) { gone[e.sym] = 1; EQUITIES.splice(i, 1); dropped++; }
+        }
+        ASSETS = ASSETS.filter(a => !gone[a.sym]);
+        const syms = EQUITIES.filter(isStk).map(e => ({ s: e.sym, n: e.name, sid: e.sector || null }));
+        try { localStorage.setItem(KEEP_KEY, JSON.stringify({ at: Date.now(), syms })); } catch (e) { /* quota */ }
+        const fresh = EQUITIES.filter(e => e.fresh).length;
+        this.termStats = null;
+        this.setState({ calTick: Date.now(), universeSize: ASSETS.length });
+        say('Scanned ' + L.length + ' · kept the strongest ' + syms.length + ' · ' + fresh + ' new, ' + dropped + ' dropped · ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }));
+      } else {
+        say(added + ' stocks added; scoring will finish as prices load. Press Refresh again in a minute to trim the list.');
+      }
+    } catch (e) {
+      console.warn('refresh scan', e && e.message);
+      say('Refresh failed: ' + (e && e.message || 'unknown error'));
+    } finally {
+      this.scrBusy = false;
+      if (!this.dead) this.setState({ scrBusy: false });
+    }
+  }
+
+  // India: INDIA is the list the India screener scores. Restore what the last Refresh kept.
+  applyKeepIndia() {
+    let K = null; try { K = JSON.parse(localStorage.getItem(KEEP_IN_KEY)); } catch (e) { K = null; }
+    if (!K || !K.syms || !K.syms.length) return;
+    const keep = {};
+    K.syms.forEach(x => { keep[x.s] = 1; if (!INDIA.find(a => a.sym === x.s)) INDIA.push({ sym: x.s, tk: x.tk, name: x.n, yh: x.s, kind: 'india', isec: x.sec || 'Other' }); });
+    const prot = this.protectedSyms();
+    for (let i = INDIA.length - 1; i >= 0; i--) if (!keep[INDIA[i].sym] && !prot[INDIA[i].sym]) INDIA.splice(i, 1);
+  }
+  async refreshIndia() {
+    if (this.scrBusy || this.dead) return;
+    this.scrBusy = true;
+    const say = t => { if (!this.dead) this.setState({ scrMsg: t, scrBusy: true }); };
+    try {
+      say('Loading the latest NSE scan…');
+      const D = await fetch('data/india.json?v=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
+      if (!D || !D.symbols || !D.bars) { say('No NSE scan found yet. Run the Daily calibration job on GitHub first.'); return; }
+      INDIA.forEach(a => { delete a.fresh; });
+      let added = 0;
+      D.symbols.forEach(x => {
+        if (INDIA.find(a => a.sym === x.s)) return;
+        const a = { sym: x.s, tk: x.tk, name: x.n, yh: x.s, kind: 'india', isec: x.sec || 'Other', fresh: 1 };
+        INDIA.push(a); if (!ASSETS.find(z => z.sym === x.s)) ASSETS.push(a); added++;
+      });
+      const add = {}, qa = {};
+      Object.keys(D.bars).forEach(s => {
+        const d = D.bars[s], n = d.c.length, cur = this.state.bars[s];
+        if (n < 60) return;
+        if (!cur || !cur.length || cur[0].synth || cur[cur.length - 1].t < d.t[n - 1] * 1000) { add[s] = closesToBars(d.t, d.c); qa[s] = { p: d.c[n - 1], ch: (d.c[n - 1] / d.c[n - 2] - 1) * 100, at: Date.now() }; }
+      });
+      say('Scoring ' + INDIA.length + ' NSE stocks…');
+      this.setState(s => ({ bars: Object.assign({}, s.bars, add), quotes: Object.assign({}, qa, s.quotes), inTick: Date.now() }));
+      await new Promise(r => setTimeout(r, 1500));
+      const st = this.state, prot = this.protectedSyms(), scored = [];
+      INDIA.forEach(a => { const b = st.bars[a.sym]; if (!b || b.length < 60) return; const sig = this.row(a, st.horizon); scored.push({ s: a.sym, v: sig ? Math.abs(sig.score || 0) : 0 }); });
+      const keep = {}; let n = 0;
+      Object.keys(prot).forEach(s => { if (INDIA.find(a => a.sym === s)) { keep[s] = 1; n++; } });
+      scored.sort((a, b) => b.v - a.v).forEach(x => { if (n < SCREENER_CAP && !keep[x.s]) { keep[x.s] = 1; n++; } });
+      const scoredSet = {}; scored.forEach(x => { scoredSet[x.s] = 1; });
+      let dropped = 0; const gone = {};
+      for (let i = INDIA.length - 1; i >= 0; i--) { const a = INDIA[i]; if (!keep[a.sym] && scoredSet[a.sym] && !prot[a.sym]) { gone[a.sym] = 1; INDIA.splice(i, 1); dropped++; } }
+      ASSETS = ASSETS.filter(a => !gone[a.sym]);
+      try { localStorage.setItem(KEEP_IN_KEY, JSON.stringify({ at: Date.now(), syms: INDIA.map(a => ({ s: a.sym, tk: a.tk, n: a.name, sec: a.isec })) })); } catch (e) { /* quota */ }
+      this.inCache = null;
+      this.setState({ inTick: Date.now(), universeSize: ASSETS.length });
+      say('Scanned ' + scored.length + ' · kept the strongest ' + INDIA.length + ' · ' + INDIA.filter(a => a.fresh).length + ' new, ' + dropped + ' dropped · ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }));
+    } catch (e) {
+      console.warn('refresh india', e && e.message);
+      say('Refresh failed: ' + (e && e.message || 'unknown error'));
+    } finally {
+      this.scrBusy = false;
+      if (!this.dead) this.setState({ scrBusy: false });
+    }
+  }
+  // Crypto: reload the coin list (top 1,000 plus CoinGecko trending) and re-score every Binance-listed coin with fresh candles.
+  async refreshCrypto() {
+    if (this.scrBusy || this.dead) return;
+    if (this.cgBusy) { this.setState({ scrMsg: 'The coin list is already reloading. Try again in a minute.' }); return; }
+    this.scrBusy = true;
+    const say = t => { if (!this.dead) this.setState({ scrMsg: t, scrBusy: true }); };
+    try {
+      say('Reloading coins from CoinGecko and Binance…');
+      this.cTech = {}; this.cTechFail = {};
+      try { sessionStorage.removeItem('divergence.ctech.v1'); } catch (e) { /* ignore */ }
+      this.cgFail = false;
+      await Promise.all([this.loadBinanceAll(), this.loadCoinGecko(true)]);
+      const U = this.cryptoUniverse(), nBin = U.filter(u => u.bin).length;
+      this.setState({ cTick: Date.now() });
+      say((this.cgFail ? 'CoinGecko unavailable, using the Binance list. ' : '') + 'Loaded ' + U.length + ' coins · re-scoring ' + nBin + ' Binance-listed coins with fresh candles (about ' + Math.max(1, Math.round(nBin / 4 / 60)) + ' min) · ' + new Date().toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' }));
+    } catch (e) {
+      console.warn('refresh crypto', e && e.message);
+      say('Refresh failed: ' + (e && e.message || 'unknown error'));
+    } finally {
+      this.scrBusy = false;
+      if (!this.dead) this.setState({ scrBusy: false });
+    }
   }
 
   async loadMovers() {
@@ -5438,6 +5630,7 @@ class Component extends DCLogic {
         if (htf) tags.push(['Quarterly setup', 'up']);
         if (gr) tags.push(['Growth', 'up']);
         const PG = pegOf(a.sym, cl[i], g, st.grow[a.sym]);
+        if (a.fresh) tags.push(['New in scan', 'acc']);
         if (themeOf[a.sym]) tags.push([themeOf[a.sym], 'acc']);
         if (op && op.longU && op.longU.length) { const lc = op.longU.filter(u => u.call).reduce((s, u) => s + u.prem, 0), lp = op.longU.filter(u => !u.call).reduce((s, u) => s + u.prem, 0); tags.push([lc >= lp ? 'Long-dated call buying' : 'Long-dated put buying', lc >= lp ? 'up' : 'down']); }
         if (op && op.dir > 0.3) tags.push(['Options bullish', 'up']); else if (op && op.dir < -0.3) tags.push(['Options bearish', 'down']);
@@ -5757,7 +5950,8 @@ class Component extends DCLogic {
       sigSeg: seg([['combined', 'Combined'], ['tech', 'Technical']], sigMode, v => this.setState({ sigMode: v })),
       sigNote: sigMode === 'combined' ? 'Technical signal + EMA trend + RSI extremes + options flow + news themes + quarterly setups + revenue growth + sector breadth.' : 'RSI divergence, MACD and EMA 10/50/100/200 signal only.',
       topBuys, topSells,
-      fltSeg, tblHead, tblRows, gridCols, tblCaption: tTot + ' stocks', tblMore: tTot > (st.termLimit || 40), showMore: () => this.setState(s => ({ termLimit: (s.termLimit || 40) + 40 })),
+      fltSeg, tblHead, tblRows, gridCols, tblCaption: tTot + ' stocks', scrRefresh: () => this.refreshScreener(), scrRefreshLabel: st.scrBusy ? 'Scanning…' : '↻ Refresh scan', scrMsg: st.scrMsg || '',
+      scrRefreshStyle: 'padding:4px 10px;border-radius:5px;font-size:11px;font-weight:600;border:1px solid var(--line);background:var(--panel2);color:var(--text);white-space:nowrap;cursor:' + (st.scrBusy ? 'default' : 'pointer') + ';opacity:' + (st.scrBusy ? '.6' : '1'), tblMore: tTot > (st.termLimit || 40), showMore: () => this.setState(s => ({ termLimit: (s.termLimit || 40) + 40 })),
       newsSeg: seg([['All', 'All'], ['Financial', 'Financial'], ['Geopolitical', 'Geopolitical']], ncat, v => this.setState({ newsCatT: v })), newsRows,
       themeRows, themeProg: tLoaded < THEMES.length ? 'reading ' + tLoaded + '/' + THEMES.length : THEMES.length + ' themes',
       qRows, qEmpty: qRows.length === 0, qProg: 'Scanning monthly and quarterly candles… ' + Object.keys(st.htf || {}).length + ' checked',
