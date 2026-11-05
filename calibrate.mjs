@@ -9,6 +9,7 @@ import { pathToFileURL } from 'node:url';
 const OUT = new URL('data/', pathToFileURL(process.cwd() + '/'));
 const BASE = ["SPY","QQQ","IWM","AAPL","MSFT","NVDA","AVGO","ORCL","CRM","ADBE","AMD","INTC","MU","PLTR","CRWD","PANW","NET","SNOW","GOOGL","META","NFLX","DIS","T","VZ","TMUS","SPOT","RDDT","PINS","SNAP","AMZN","TSLA","HD","MCD","WMT","COST","PG","KO","PEP","PM","MDLZ","CL","KHC","TGT","JPM","BAC","WFC","GS","MS","V","MA","AXP","SCHW","HOOD","SOFI","PYPL","LLY","UNH","JNJ","ABBV","MRK","PFE","TMO","ISRG","VRTX","MRNA","HIMS","XOM","CVX","COP","OXY","SLB","EOG","MPC","DVN","HAL","CAT","GE","BA","HON","UPS","RTX","LMT","DE","UBER","RKLB","LIN","FCX","NEM","SHW","DOW","NUE","ALB","MP","NEE","DUK","SO","CEG","VST","OKLO","SMR","CCJ","PLD","AMT","EQIX","O","SPG","DLR","MSTR","COIN","MARA","RIOT","HUT","CLSK","IREN","CIFR","ACN","BB","NOK","BITF","WULF","APLD","CORZ","BTBT","PLUG","LCID","NIO","FUBO","AMC","GME","SNDL","TLRY","OPEN","IONQ","RGTI","QBTS","SOUN","BBAI","ACHR","JOBY","LUNR","ASTS","UPST","AFRM","CHPT","BLNK","QS","RUN","SIRI","GRAB","CELH","RXRX","NVAX","MVIS","CLOV"];
 const IDX = ["^GSPC","^NDX","^DJI","^RUT","^VIX","^TNX","^FVX","^TYX","TLT","GC=F","SI=F","CL=F","NG=F","HG=F","ES=F","NQ=F","YM=F","RTY=F","ZN=F","ZB=F","6E=F","BZ=F","BTC-USD","ETH-USD","SOL-USD","DX-Y.NYB","EURUSD=X"];
+const INDIA_BUDGET_MS = 12 * 60 * 1000;
 const MOVER_SCREENS = ['day_gainers', 'day_losers', 'most_actives', 'small_cap_gainers', 'growth_technology_stocks'];
 const MOVER_KEEP_DAYS = 10, MOVER_CAP = 80, MAX_SYMBOLS = 700, TIME_BUDGET_MS = 25 * 60 * 1000, MIN_BARS = 100;
 const UA = { 'User-Agent': 'Mozilla/5.0 (compatible; divergence-calibrator/1.0)' };
@@ -192,6 +193,33 @@ async function buildUniverse(prevU) {
   return list;
 }
 
+// ---------- India (NSE Nifty 500) ----------
+// Closes only: the India screener builds its candles from closes. Best effort: a failure here never fails the US job.
+async function indiaStage(now) {
+  let t = null;
+  for (const u of ['https://archives.nseindia.com/content/indices/ind_nifty500list.csv', 'https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv']) {
+    t = await getText(u); if (t && t.includes('Symbol')) break; t = null;
+  }
+  if (!t) { console.log('india: Nifty 500 list unavailable, skipping'); return; }
+  const rows = csvRows(t.replace(/^﻿/, '')), h = (rows.shift() || []).map(x => x.trim()), iN = h.indexOf('Company Name'), iI = h.indexOf('Industry'), iS = h.indexOf('Symbol');
+  if (iS < 0) { console.log('india: unexpected CSV header, skipping'); return; }
+  const list = rows.map(r => { const tk = (r[iS] || '').trim().toUpperCase(); return { s: tk + '.NS', tk, n: (r[iN] || '').trim(), sec: (r[iI] || '').trim() }; }).filter(x => x.tk);
+  const bars = {}, t0 = Date.now(); let next = 0;
+  async function worker() {
+    while (next < list.length) {
+      if (Date.now() - t0 > INDIA_BUDGET_MS) return;
+      const u = list[next++];
+      try { const b = await yahooBars(u.s); if (b && b.length >= 60) bars[u.s] = { t: b.map(x => Math.round(x.t / 1000)), c: b.map(x => Math.round(x.c * 1000) / 1000) }; } catch { /* skip symbol */ }
+      await sleep(250);
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]);
+  const symbols = list.filter(u => bars[u.s]);
+  console.log('india', symbols.length, 'of', list.length, 'stocks downloaded');
+  if (symbols.length < 100) { console.log('india: too few stocks downloaded, keeping the previous india.json'); return; }
+  await writeFile(new URL('india.json', OUT), JSON.stringify({ updated: now, symbols, bars }));
+}
+
 async function main() {
   await mkdir(OUT, { recursive: true });
   let prev = null; try { prev = JSON.parse(await readFile(new URL('calibration.json', OUT), 'utf8')).cal; } catch { /* first run */ }
@@ -243,5 +271,6 @@ async function main() {
   const day = now.slice(0, 10);
   await writeFile(new URL('history/' + day + '.json', OUT), JSON.stringify({ updated: now, reg: cal.reg, stocks: cal.stocks, feats: Object.fromEntries(Object.entries(cal.feats).map(([k, f]) => [k, { pts: f.pts, status: f.status, nT: f.nT, mT: f.mT }])), byReg: cal.byReg }));
   console.log('calibrated', cal.stocks, 'stocks · regime', cal.reg, '· changes', cal.log.length);
+  try { await indiaStage(now); } catch (e) { console.log('india stage failed:', e && e.message); }
 }
 main().catch(e => { console.error(e); process.exit(1); });
