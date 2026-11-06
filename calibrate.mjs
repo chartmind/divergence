@@ -220,6 +220,64 @@ async function indiaStage(now) {
   await writeFile(new URL('india.json', OUT), JSON.stringify({ updated: now, symbols, bars }));
 }
 
+// ---------- Earnings (Nasdaq calendar) ----------
+// One call per day returns every company that reported (EPS, consensus, % surprise) or will report (consensus, timing).
+// We keep the last 6 reports per universe stock, plus the reporters for the next 10 days. Best effort: never fails the job.
+const EARN_BACKFILL_DAYS = 400, EARN_PER_RUN = 140;
+const nq = v => { if (v == null) return null; const s = String(v).trim(); if (!s || /^n\/?a$/i.test(s)) return null; const neg = /^\(.*\)$/.test(s) || s.startsWith('-'); const n = parseFloat(s.replace(/[^0-9.]/g, '')); return isFinite(n) ? (neg ? -n : n) : null; };
+async function nasdaqDay(date) {
+  for (let t = 0; t < 3; t++) {
+    try {
+      const r = await fetch('https://api.nasdaq.com/api/calendar/earnings?date=' + date, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Accept: 'application/json, text/plain, */*', Origin: 'https://www.nasdaq.com', Referer: 'https://www.nasdaq.com/' } });
+      if (r.status === 429) { await sleep(4000 * (t + 1)); continue; }
+      if (!r.ok) throw new Error(r.status);
+      const j = await r.json(), rows = j && j.data && j.data.rows;
+      return Array.isArray(rows) ? rows : [];
+    } catch { await sleep(1500 * (t + 1)); }
+  }
+  return null;
+}
+async function earningsStage(now, symSet) {
+  let E = {}; try { E = JSON.parse(await readFile(new URL('earnings.json', OUT), 'utf8')); } catch { /* first run */ }
+  const q = E.q || {}, up = {}, done = E.done || {};
+  const ymd = d => d.toISOString().slice(0, 10);
+  const etToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+  const base = new Date(etToday + 'T12:00:00Z'), day = n => ymd(new Date(base.getTime() + n * 864e5)), wk = s => { const w = new Date(s + 'T12:00:00Z').getUTCDay(); return w !== 0 && w !== 6; };
+  const tm = x => /pre/.test(x || '') ? 'pre' : /after/.test(x || '') ? 'post' : null;
+  const oldUp = E.up || {};
+  // 1) upcoming: today .. +10 days
+  let fails = 0;
+  for (let n = 0; n <= 10; n++) {
+    const d = day(n); if (!wk(d)) continue;
+    const rows = await nasdaqDay(d); await sleep(400);
+    if (!rows) { if (++fails >= 3) break; continue; }
+    rows.forEach(r => { if (!symSet.has(r.symbol)) return; (up[r.symbol] = up[r.symbol] || []).push({ d, t: tm(r.time), est: nq(r.epsForecast), n: nq(r.noOfEsts), fq: r.fiscalQuarterEnding || null }); });
+  }
+  if (fails >= 3) { console.log('earnings: Nasdaq not reachable, skipping'); return; }
+  // 2) past reports: last 3 days always re-read (EPS can post late), older days once.
+  const need = [];
+  for (let n = -1; n >= -EARN_BACKFILL_DAYS; n--) { const d = day(n); if (wk(d) && (n >= -3 || !done[d])) need.push(d); }
+  let got = 0;
+  for (const d of need.slice(0, EARN_PER_RUN)) {
+    const rows = await nasdaqDay(d); await sleep(400);
+    if (!rows) { if (++fails >= 6) break; continue; }
+    rows.forEach(r => {
+      if (!symSet.has(r.symbol)) return;
+      const eps = nq(r.eps); if (eps == null) return;
+      const prevT = ((oldUp[r.symbol] || []).find(u => u.d === d) || {}).t || null;
+      const rec = { d, fq: r.fiscalQuarterEnding || null, eps, est: nq(r.epsForecast), sur: nq(r.surprise), t: tm(r.time) || prevT };
+      const a = q[r.symbol] = (q[r.symbol] || []).filter(x => x.d !== d); a.push(rec); a.sort((x, y) => y.d.localeCompare(x.d)); q[r.symbol] = a.slice(0, 6);
+    });
+    if (d < day(-3)) done[d] = 1; got++;
+  }
+  // remember timing of upcoming reports so the pre/after-hours flag survives once Nasdaq drops it
+  const keepUp = {}; Object.keys(up).forEach(s => keepUp[s] = up[s]);
+  Object.keys(oldUp).forEach(s => { const old = oldUp[s].filter(u => u.d >= day(-3) && u.d < day(0)); if (old.length) keepUp[s] = (keepUp[s] || []).concat(old); });
+  const left = need.length - Math.min(need.length, EARN_PER_RUN);
+  console.log('earnings:', Object.keys(q).length, 'stocks with history ·', Object.keys(up).length, 'reporting in next 10 days · read', got, 'past days ·', left, 'days still to back-fill');
+  await writeFile(new URL('earnings.json', OUT), JSON.stringify({ updated: now, asOf: etToday, done, q, up: keepUp }));
+}
+
 async function main() {
   await mkdir(OUT, { recursive: true });
   let prev = null; try { prev = JSON.parse(await readFile(new URL('calibration.json', OUT), 'utf8')).cal; } catch { /* first run */ }
@@ -271,6 +329,7 @@ async function main() {
   const day = now.slice(0, 10);
   await writeFile(new URL('history/' + day + '.json', OUT), JSON.stringify({ updated: now, reg: cal.reg, stocks: cal.stocks, feats: Object.fromEntries(Object.entries(cal.feats).map(([k, f]) => [k, { pts: f.pts, status: f.status, nT: f.nT, mT: f.mT }])), byReg: cal.byReg }));
   console.log('calibrated', cal.stocks, 'stocks · regime', cal.reg, '· changes', cal.log.length);
+  try { await earningsStage(now, new Set(symbols.map(u => u.s))); } catch (e) { console.log('earnings stage failed:', e && e.message); }
   try { await indiaStage(now); } catch (e) { console.log('india stage failed:', e && e.message); }
 }
 main().catch(e => { console.error(e); process.exit(1); });
