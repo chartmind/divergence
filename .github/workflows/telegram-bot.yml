@@ -49,7 +49,8 @@ jobs:
         run: |
           git config user.name "divergence-bot"
           git config user.email "bot@users.noreply.github.com"
-          git add -A data .botstate || true
+          git add -A data
+          [ -d .botstate ] && git add -A .botstate || true
           git diff --cached --quiet || git commit -m "Bot update $(date -u +%FT%H:%M)"
           git pull --rebase --autostash || true
           git push
