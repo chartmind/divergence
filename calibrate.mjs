@@ -161,11 +161,22 @@ function csvRows(t) {
   return t.split(/\r?\n/).filter(Boolean).map(line => { const o = []; let cur = '', q = false; for (const ch of line) { if (ch === '"') q = !q; else if (ch === ',' && !q) { o.push(cur); cur = ''; } else cur += ch; } o.push(cur); return o; });
 }
 async function sp500() {
+  // Source 1: GitHub dataset (CSV). Source 2: Wikipedia's constituents table. Needs 400+ rows to count as valid.
   const t = await getText('https://raw.githubusercontent.com/datasets/s-and-p-500-constituents/main/data/constituents.csv');
-  if (!t) return [];
-  const rows = csvRows(t), h = rows.shift() || [], iS = h.indexOf('Symbol'), iN = h.indexOf('Security'), iG = h.indexOf('GICS Sector');
-  if (iS < 0) return [];
-  return rows.map(r => ({ s: (r[iS] || '').trim().toUpperCase().replace(/\./g, '-'), n: r[iN] || '', sec: r[iG] || '' })).filter(x => TICKER.test(x.s));
+  if (t) {
+    const rows = csvRows(t), h = rows.shift() || [], iS = h.indexOf('Symbol'), iN = h.indexOf('Security'), iG = h.indexOf('GICS Sector');
+    const out = iS < 0 ? [] : rows.map(r => ({ s: (r[iS] || '').trim().toUpperCase().replace(/\./g, '-'), n: r[iN] || '', sec: r[iG] || '' })).filter(x => TICKER.test(x.s));
+    if (out.length >= 400) return out;
+  }
+  const w = await getText('https://en.wikipedia.org/api/rest_v1/page/html/List_of_S%26P_500_companies');
+  if (w) {
+    const strip = x => x.replace(/<[^>]+>/g, '').replace(/&amp;/g, '&').replace(/&#\d+;|&[a-z]+;/g, ' ').trim();
+    const out = [], re = /<tr[^>]*>\s*<td[^>]*>([\s\S]*?)<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>\s*<td[^>]*>([\s\S]*?)<\/td>/g; let m;
+    while ((m = re.exec(w))) { const s = strip(m[1]).toUpperCase().replace(/\./g, '-'); if (TICKER.test(s)) out.push({ s, n: strip(m[2]), sec: strip(m[3]) }); }
+    if (out.length >= 400) return out;
+  }
+  console.log('sp500: no source worked, using core list and movers only');
+  return [];
 }
 async function movers() {
   const out = new Set();
@@ -228,7 +239,7 @@ const nq = v => { if (v == null) return null; const s = String(v).trim(); if (!s
 async function nasdaqDay(date) {
   for (let t = 0; t < 3; t++) {
     try {
-      const r = await fetch('https://api.nasdaq.com/api/calendar/earnings?date=' + date, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Accept: 'application/json, text/plain, */*', Origin: 'https://www.nasdaq.com', Referer: 'https://www.nasdaq.com/' } });
+      const r = await fetch('https://api.nasdaq.com/api/calendar/earnings?date=' + date, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Accept: 'application/json, text/plain, */*', Origin: 'https://www.nasdaq.com', Referer: 'https://www.nasdaq.com/' }, signal: AbortSignal.timeout(20000) });
       if (r.status === 429) { await sleep(4000 * (t + 1)); continue; }
       if (!r.ok) throw new Error(r.status);
       const j = await r.json(), rows = j && j.data && j.data.rows;
