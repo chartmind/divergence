@@ -1244,6 +1244,23 @@ a:hover{color:oklch(0.44 0.12 165)}
                 <span style="font-size:11.5px;line-height:1.45;color:var(--mute)">{{ IP.wkRead }}</span>
               </div>
             </sc-if>
+            <sc-if value="{{ earn.show }}" hint-placeholder-val="{{ false }}">
+              <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)">Earnings</span>
+                  <span style="{{ earn.nextStyle }}">{{ earn.next }}</span>
+                </div>
+                <sc-if value="{{ earn.todayShow }}" hint-placeholder-val="{{ false }}"><div style="{{ earn.todayStyle }}">{{ earn.today }}</div></sc-if>
+                <sc-for list="{{ earn.rows }}" as="q" hint-placeholder-count="0">
+                  <div style="display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--line);padding-top:6px">
+                    <div style="display:flex;justify-content:space-between;gap:8px"><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint)">{{ q.d }}</span><span style="{{ q.vStyle }}">{{ q.verdict }}</span></div>
+                    <span style="font-size:12px">{{ q.l2 }}</span>
+                    <sc-if value="{{ q.has3 }}" hint-placeholder-val="{{ false }}"><span style="font-size:11.5px;color:var(--mute)">{{ q.l3 }}</span></sc-if>
+                  </div>
+                </sc-for>
+                <sc-if value="{{ earn.hasRead }}" hint-placeholder-val="{{ false }}"><span style="font-size:11.5px;line-height:1.45;color:var(--mute)">{{ earn.read }}</span></sc-if>
+              </div>
+            </sc-if>
             <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px">
               <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
                 <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)">Portfolio</span>
@@ -3313,6 +3330,8 @@ class Component extends DCLogic {
     if (I && I.idx && !this.dead) { const merged = Object.assign({}, I.idx, this.state.idx || {}); Object.keys(I.idx).forEach(s => { const a = I.idx[s], b = merged[s]; if (!b || !b.t || (a.t[a.t.length - 1] >= b.t[b.t.length - 1])) merged[s] = a; }); this.setState({ idx: merged, idxAt: Date.now() }); }
     const BF = await get('data/brief.json'), SG = await get('data/signals.json');
     if (!this.dead && (BF || SG)) this.setState({ pubBrief: BF, pubSigs: SG });
+    const EA = await get('data/earnings.json');
+    if (EA && EA.q && !this.dead) { this.earn = EA; this.setState({ earnTick: Date.now() }); }
     const B = await get('data/bars.json');
     if (B && B.bars && !this.dead) {
       this.setState(s0 => {
@@ -3782,6 +3801,56 @@ class Component extends DCLogic {
       this.scrBusy = false;
       if (!this.dead) this.setState({ scrBusy: false });
     }
+  }
+
+  earnView(sym) {
+    const E = this.earn, M = "font-family:'JetBrains Mono',monospace;";
+    if (!E || !sym) return { show: false, rows: [] };
+    const qs = (E.q && E.q[sym]) || [], today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+    const nx = ((E.up && E.up[sym]) || []).filter(u => u.d >= today).sort((a, b) => a.d.localeCompare(b.d))[0] || null;
+    if (!qs.length && !nx) return { show: false, rows: [] };
+    const bars = this.state.bars[sym] || [], dk = x => new Date((x.t < 1e12 ? x.t * 1000 : x.t) - 5 * 3600e3).toISOString().slice(0, 10);
+    const dates = bars.map(dk);
+    const react = q => {
+      const i = dates.indexOf(q.d); if (i < 1) return null;
+      const day0 = (bars[i].c / bars[i - 1].c - 1) * 100, day1 = i + 1 < bars.length ? (bars[i + 1].c / bars[i].c - 1) * 100 : null;
+      if (q.t === 'pre') return day0; if (q.t === 'post') return day1;
+      return day1 != null && Math.abs(day1) > Math.abs(day0) ? day1 : day0;
+    };
+    const $ = v => v == null ? '—' : (v < 0 ? '-$' : '$') + Math.abs(v).toFixed(2), pc = v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
+    const lab = d => new Date(d + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const when = t => t === 'pre' ? 'before the open' : t === 'post' ? 'after the close' : 'time not confirmed';
+    const list = qs.slice(0, 4), rx = list.map(react);
+    const rows = list.map((q, k) => {
+      const diff = q.est != null ? q.eps - q.est : null, thr = q.est != null ? Math.max(0.005, Math.abs(q.est) * 0.01) : 0;
+      const v = diff == null ? 'REPORTED' : diff > thr ? 'BEAT' : diff < -thr ? 'MISS' : 'IN LINE';
+      const pr = list[k + 1], sur = q.sur != null ? q.sur : (q.est ? diff / Math.abs(q.est) * 100 : null);
+      let l2 = 'EPS ' + $(q.eps) + (q.est != null ? ' vs ' + $(q.est) + ' expected' + (sur != null ? ' (' + pc(sur) + ')' : '') : '');
+      let l3 = pr ? (q.eps > pr.eps + 0.005 ? 'Better than last quarter (' + $(pr.eps) + ')' : q.eps < pr.eps - 0.005 ? 'Worse than last quarter (' + $(pr.eps) + ')' : 'Same as last quarter (' + $(pr.eps) + ')') : '';
+      const r = rx[k]; if (r != null) l3 += (l3 ? ' · ' : '') + 'stock ' + pc(r) + ' on the report';
+      return { d: lab(q.d) + (q.fq ? ' · ' + q.fq : ''), verdict: v, vStyle: M + 'font-size:10px;font-weight:700;color:' + (v === 'BEAT' ? 'var(--up)' : v === 'MISS' ? 'var(--down)' : 'var(--mute)'), l2, l3, has3: !!l3 };
+    });
+    // track record and impact
+    const withEst = list.filter(q => q.est != null), beats = withEst.filter(q => q.eps - q.est > Math.max(0.005, Math.abs(q.est) * 0.01)).length;
+    const rr = rx.filter(v => v != null), avgAbs = rr.length ? rr.reduce((a, v) => a + Math.abs(v), 0) / rr.length : null;
+    const bUp = list.filter((q, k) => rx[k] != null && q.est != null && q.eps - q.est > Math.max(0.005, Math.abs(q.est) * 0.01));
+    const bUpN = bUp.filter(q => rx[list.indexOf(q)] > 0).length;
+    let read = '';
+    if (withEst.length) read += 'Beat ' + beats + ' of the last ' + withEst.length + ' quarters. ';
+    if (avgAbs != null) read += 'The stock has moved about ' + avgAbs.toFixed(1) + '% on report day on average' + (bUp.length >= 2 ? ', and rose after ' + bUpN + ' of ' + bUp.length + ' beats' : '') + '. ';
+    read += 'This is the stock\'s track record, not a prediction: a beat can still sell off if guidance disappoints, and the first move is often larger than the next day\'s.';
+    // today / next
+    const isToday = !!nx && nx.d === today, tomorrow = new Date(new Date(today + 'T12:00:00Z').getTime() + 864e5).toISOString().slice(0, 10);
+    const nextTxt = nx ? (isToday ? 'REPORTING TODAY' : nx.d === tomorrow ? 'Reports tomorrow' : 'Next report ' + lab(nx.d)) + ' · ' + when(nx.t) : 'No upcoming date listed';
+    let todayTxt = '';
+    if (isToday) todayTxt = 'Reports today ' + when(nx.t) + (nx.est != null ? '. Consensus EPS ' + $(nx.est) + (nx.n ? ' (' + nx.n + ' analysts)' : '') : '') + (avgAbs != null ? '. Typical report-day move for this stock: about ±' + avgAbs.toFixed(1) + '%' : '') + '. New buys into the print carry gap risk either way; the result is added to this panel with the next daily update.';
+    return { show: true, rows, next: nextTxt, nextStyle: M + 'font-size:10.5px;font-weight:700;color:' + (isToday ? 'var(--warn)' : 'var(--mute)'), todayShow: isToday, today: todayTxt, todayStyle: 'font-size:12px;line-height:1.45;padding:8px 10px;border-radius:6px;background:color-mix(in oklch, var(--warn) 14%, transparent);color:var(--text)', hasRows: rows.length > 0, read, hasRead: rows.length > 0 };
+  }
+  earnTag(sym) {
+    const E = this.earn; if (!E || !E.up || !E.up[sym]) return [];
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()), lim = new Date(new Date(today + 'T12:00:00Z').getTime() + 3 * 864e5).toISOString().slice(0, 10);
+    const nx = E.up[sym].filter(u => u.d >= today && u.d <= lim).sort((a, b) => a.d.localeCompare(b.d))[0]; if (!nx) return [];
+    return [nx.d === today ? ['Earnings today', 'down'] : ['Earnings ' + new Date(nx.d + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }), 'acc']];
   }
 
   macroView() {
@@ -4998,7 +5067,7 @@ class Component extends DCLogic {
       pfReset: () => { if (!window.confirm('Reset ' + cur.name + '? Positions and trades will be cleared.')) return; this.pfSet(q => { const c = q.list.find(x => x.id === cur.id); c.pos = {}; c.trades = []; c.realized = 0; c.cash = c.start; }); },
       pfDelete: () => { if (pf.list.length < 2) return; if (!window.confirm('Delete ' + cur.name + '?')) return; this.pfSet(q => { q.list = q.list.filter(x => x.id !== cur.id); q.cur = q.list[0].id; }); },
       pfCanDelete: pf.list.length > 1,
-      tk, tkQtyVal: st.tkQty, onTkQty: e => this.setState({ tkQty: e.target.value.replace(/[^0-9.]/g, ''), tkMsg: '' }), tkPxVal: st.tkPx, onTkPx: e => this.setState({ tkPx: e.target.value.replace(/[^0-9.]/g, ''), tkMsg: '' }),
+      tk, earn: this.earnView(sym), tkQtyVal: st.tkQty, onTkQty: e => this.setState({ tkQty: e.target.value.replace(/[^0-9.]/g, ''), tkMsg: '' }), tkPxVal: st.tkPx, onTkPx: e => this.setState({ tkPx: e.target.value.replace(/[^0-9.]/g, ''), tkMsg: '' }),
       tkPfTabs: pf.list.map(p => ({ label: p.name, pick: () => { this.pfSet(q => { q.cur = p.id; }); this.setState({ tkMsg: '' }); }, style: 'padding:4px 9px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;' + (p.id === cur.id ? 'background:var(--text);color:var(--bg)' : 'border:1px solid var(--line);color:var(--mute)') }))
     };
   }
@@ -5791,7 +5860,7 @@ class Component extends DCLogic {
         rev: x.rev != null ? pct(x.rev, 0) : '—', revStyle: R2 + 'color:' + cv(x.rev),
         peg: x.peg && x.peg.v != null ? x.peg.v.toFixed(2) : x.peg && x.peg.why === 'earnings shrinking' ? 'neg' : '—', pegStyle: R2 + 'color:' + (x.peg && x.peg.v != null ? (x.peg.v <= 1 ? 'var(--up)' : x.peg.v > 2 ? 'var(--down)' : 'var(--text)') : 'var(--faint)'),
         conv: String(x.conv), convStyle: R2 + 'font-weight:700;color:' + cv(x.conv),
-        tags: x.tags.slice(0, 5).map(t => chip(t[0], t[1])), open: openSym(x.sym) };
+        tags: this.earnTag(x.sym).concat(x.tags).slice(0, 5).map(t => chip(t[0], t[1])), open: openSym(x.sym) };
     });
 
     const ncat = st.newsCatT || 'All';
