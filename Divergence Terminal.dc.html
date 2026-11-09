@@ -236,8 +236,72 @@ a:hover{color:oklch(0.44 0.12 165)}
       </div>
       <span style="font-size:11.5px;color:var(--mute)">{{ scrAssetNote }}</span>
       <div onClick="{{ scrRefresh }}" style="{{ scrRefreshStyle }}">{{ scrRefreshLabel }}</div>
+      <sc-if value="{{ scrStocks }}" hint-placeholder-val="{{ true }}"><div onClick="{{ optToggle }}" style="{{ optBtnStyle }}">{{ optBtnLabel }}</div></sc-if>
       <span style="font-size:11px;color:var(--mute)">{{ scrMsg }}</span>
     </div>
+    <sc-if value="{{ scrExch }}" hint-placeholder-val="{{ false }}">
+    <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;min-width:0">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)">NASDAQ + NYSE · {{ exCaption }}</span>
+        <div style="display:flex;gap:2px;padding:2px;background:var(--panel2);border:1px solid var(--line);border-radius:7px">
+          <sc-for list="{{ exxSeg }}" as="s" hint-placeholder-count="3"><div onClick="{{ s.pick }}" style="{{ s.style }}">{{ s.label }}</div></sc-for>
+        </div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-left:auto">
+          <sc-for list="{{ exSeg }}" as="s" hint-placeholder-count="6"><div onClick="{{ s.pick }}" style="{{ s.style }}">{{ s.label }}</div></sc-for>
+        </div>
+      </div>
+      <sc-if value="{{ exNote }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;color:var(--mute);padding:12px">{{ exNote }}</span></sc-if>
+      <div style="overflow-x:auto">
+        <div style="min-width:1000px">
+          <div style="display:grid;grid-template-columns:28px 62px minmax(120px,1.3fr) 62px minmax(80px,.8fr) 74px 66px 70px 74px 42px 90px 56px 56px;align-items:center;padding:0 12px;border-bottom:1px solid var(--line);background:var(--panel2)">
+            <sc-for list="{{ exHead }}" as="c" hint-placeholder-count="13"><div onClick="{{ c.pick }}" style="{{ c.style }}">{{ c.label }}</div></sc-for>
+          </div>
+          <sc-for list="{{ exRows }}" as="r" hint-placeholder-count="12">
+            <div onClick="{{ r.open }}" style="display:grid;grid-template-columns:28px 62px minmax(120px,1.3fr) 62px minmax(80px,.8fr) 74px 66px 70px 74px 42px 90px 56px 56px;align-items:center;padding:0 12px;border-bottom:1px solid var(--line);cursor:pointer;min-height:34px" style-hover="background:var(--panel2)">
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint)">{{ r.n }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;color:var(--accent)">{{ r.sym }}</span>
+              <span style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:8px">{{ r.name }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mute)">{{ r.ex }}</span>
+              <span style="font-size:11px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding-right:6px">{{ r.sector }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:12px;text-align:right">{{ r.px }}</span>
+              <span style="{{ r.chStyle }}">{{ r.ch }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;text-align:right;color:var(--mute)">{{ r.vol }}</span>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:11.5px;text-align:right">{{ r.cap }}</span>
+              <span style="{{ r.rStyle }}">{{ r.r }}</span>
+              <span style="{{ r.tStyle }}">{{ r.trend }}</span>
+              <span style="{{ r.sStyle }}">{{ r.sig }}</span>
+              <span style="{{ r.scStyle }}">{{ r.score }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+      <sc-if value="{{ exMore }}" hint-placeholder-val="{{ false }}"><div onClick="{{ exShowMore }}" style="padding:10px;text-align:center;font-size:12px;font-weight:600;color:var(--accent);cursor:pointer">Show more</div></sc-if>
+      <span style="font-size:11px;line-height:1.45;color:var(--mute);padding:10px 12px;border-top:1px solid var(--line)">{{ exFoot }}</span>
+    </div>
+    </sc-if>
+    <sc-if value="{{ scrStocks }}" hint-placeholder-val="{{ true }}"><sc-if value="{{ optOpen }}" hint-placeholder-val="{{ false }}">
+    <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px">
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)">Portfolio optimizer · how to split your money across the top BUY stocks</span>
+        <div style="display:flex;align-items:center;gap:6px;margin-left:auto"><span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute)">AMOUNT $</span><input value="{{ optAmtVal }}" onChange="{{ onOptAmt }}" inputmode="decimal" style="width:100px;background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:5px 8px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:12px;outline:none;box-sizing:border-box"></div>
+      </div>
+      <sc-if value="{{ optMsg }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;color:var(--mute)">{{ optMsg }}</span></sc-if>
+      <sc-if value="{{ optReady }}" hint-placeholder-val="{{ false }}">
+        <div style="display:flex;flex-wrap:wrap;gap:8px">
+          <sc-for list="{{ optCards }}" as="c" hint-placeholder-count="3">
+            <div style="{{ c.style }}"><span style="font-size:12.5px;font-weight:700">{{ c.name }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px">{{ c.line1 }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--mute)">{{ c.line2 }}</span><span style="font-size:11px;color:var(--mute);line-height:1.4">{{ c.why }}</span></div>
+          </sc-for>
+        </div>
+        <div style="display:flex;flex-direction:column">
+          <div style="display:grid;grid-template-columns:70px 1fr 120px 120px 120px;gap:6px;padding:4px 0;font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--mute);border-bottom:1px solid var(--line)"><span>STOCK</span><span>NAME · SCORE</span><span>EQUAL</span><span>LOWEST RISK</span><span>BEST RETURN/RISK</span></div>
+          <sc-for list="{{ optRows }}" as="r" hint-placeholder-count="6">
+            <div onClick="{{ r.open }}" style="display:grid;grid-template-columns:70px 1fr 120px 120px 120px;gap:6px;padding:6px 0;border-bottom:1px solid var(--line);align-items:center;cursor:pointer;font-size:12px"><span style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--accent)">{{ r.sym }}</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.name }} · {{ r.score }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px">{{ r.a }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px">{{ r.b }}</span><span style="font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700">{{ r.c }}</span></div>
+          </sc-for>
+        </div>
+        <span style="font-size:11px;line-height:1.45;color:var(--mute)">{{ optFoot }}</span>
+      </sc-if>
+    </div>
+    </sc-if></sc-if>
     <sc-if value="{{ scrStocks }}" hint-placeholder-val="{{ true }}">
     <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;min-width:0">
       <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)">
@@ -3330,6 +3394,8 @@ class Component extends DCLogic {
     if (I && I.idx && !this.dead) { const merged = Object.assign({}, I.idx, this.state.idx || {}); Object.keys(I.idx).forEach(s => { const a = I.idx[s], b = merged[s]; if (!b || !b.t || (a.t[a.t.length - 1] >= b.t[b.t.length - 1])) merged[s] = a; }); this.setState({ idx: merged, idxAt: Date.now() }); }
     const BF = await get('data/brief.json'), SG = await get('data/signals.json');
     if (!this.dead && (BF || SG)) this.setState({ pubBrief: BF, pubSigs: SG });
+    const EX = await get('data/exchange.json');
+    if (EX && EX.rows && !this.dead) { this.exch = EX; this.setState({ exchTick: Date.now() }); }
     const EA = await get('data/earnings.json');
     if (EA && EA.q && !this.dead) { this.earn = EA; this.setState({ earnTick: Date.now() }); }
     const B = await get('data/bars.json');
@@ -3485,9 +3551,9 @@ class Component extends DCLogic {
     const segS = on => 'padding:5px 10px;border-radius:5px;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap;' + (on ? 'background:var(--text);color:var(--bg)' : 'color:var(--mute)');
     const isC = st.scrAsset === 'crypto';
     const base = {
-      scrAssetSeg: [['stocks', 'US stocks'], ['india', 'India'], ['crypto', 'Crypto']].map(([id, label]) => ({ label, style: segS((st.scrAsset || 'stocks') === id), pick: () => { try { sessionStorage.setItem('divergence.scrAsset', id); } catch (e) { /* ignore */ } this.setState({ scrAsset: id, scrMsg: '' }); if (id === 'crypto') this.cryptoBoot(); if (id === 'india') this.indiaBoot(); } })),
-      scrStocks: !isC && st.scrAsset !== 'india', scrCrypto: isC, scrIndia: st.scrAsset === 'india',
-      scrAssetNote: st.scrAsset === 'india' ? 'NSE large and mid caps, in rupees, with the same buy/sell rules' : isC ? 'Top 1,000 coins, sorted by market cap. Type in the search bar to filter. Coins with no max supply (ETH, SOL) score low on scarcity, so they rarely appear in the hold picks' : 'US stocks scanned by the app',
+      scrAssetSeg: [['stocks', 'US stocks'], ['exch', 'NASDAQ/NYSE'], ['india', 'India'], ['crypto', 'Crypto']].map(([id, label]) => ({ label, style: segS((st.scrAsset || 'stocks') === id), pick: () => { try { sessionStorage.setItem('divergence.scrAsset', id); } catch (e) { /* ignore */ } this.setState({ scrAsset: id, scrMsg: '' }); if (id === 'crypto') this.cryptoBoot(); if (id === 'india') this.indiaBoot(); } })),
+      scrStocks: !isC && st.scrAsset !== 'india' && st.scrAsset !== 'exch', scrCrypto: isC, scrIndia: st.scrAsset === 'india',
+      scrAssetNote: st.scrAsset === 'india' ? 'NSE large and mid caps, in rupees, with the same buy/sell rules' : st.scrAsset === 'exch' ? 'Every liquid NASDAQ and NYSE stock, scored by the nightly job' : isC ? 'Top 1,000 coins, sorted by market cap. Type in the search bar to filter. Coins with no max supply (ETH, SOL) score low on scarcity, so they rarely appear in the hold picks' : 'US stocks scanned by the app',
       cHoldCards: [], cHoldEmpty: false, cHoldEmptyTxt: '', cHoldNote: '', cFltSeg: [], cHead: [], cRows: [], cGrid: '1fr', cCaption: '', cMore: false, cShowMore: () => {}
     };
     if (!isC) return base;
@@ -3661,6 +3727,7 @@ class Component extends DCLogic {
   // Scan the server's wider universe plus today's Yahoo movers, then keep the strongest SCREENER_CAP stocks.
   refreshScreener() {
     const k = this.state.scrAsset;
+    if (k === 'exch') { this.setState({ scrMsg: 'Reloading the nightly scan…' }); return this.loadPublished().then(() => this.setState({ scrMsg: this.exch ? 'Loaded ' + this.exch.rows.length + ' stocks from ' + new Date(this.exch.updated).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No NASDAQ/NYSE scan has been published yet' })); }
     return k === 'india' ? this.refreshIndia() : k === 'crypto' ? this.refreshCrypto() : this.refreshStocks();
   }
   async refreshStocks() {
@@ -3851,6 +3918,86 @@ class Component extends DCLogic {
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date()), lim = new Date(new Date(today + 'T12:00:00Z').getTime() + 3 * 864e5).toISOString().slice(0, 10);
     const nx = E.up[sym].filter(u => u.d >= today && u.d <= lim).sort((a, b) => a.d.localeCompare(b.d))[0]; if (!nx) return [];
     return [nx.d === today ? ['Earnings today', 'down'] : ['Earnings ' + new Date(nx.d + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' }), 'acc']];
+  }
+
+  optView(L) {
+    const st = this.state, M = "font-family:'JetBrains Mono',monospace;", open = !!st.optOpen;
+    const out = { optOpen: open, optToggle: () => this.setState({ optOpen: !open }), optBtnLabel: open ? 'Hide optimizer' : 'Portfolio optimizer',
+      optBtnStyle: 'padding:4px 10px;border-radius:5px;font-size:11px;font-weight:600;border:1px solid var(--line);white-space:nowrap;cursor:pointer;' + (open ? 'background:var(--text);color:var(--bg)' : 'background:var(--panel2);color:var(--text)'),
+      optAmtVal: st.optAmt == null ? '10000' : st.optAmt, onOptAmt: e => this.setState({ optAmt: e.target.value.replace(/[^0-9.]/g, '') }), optReady: false, optMsg: '', optCards: [], optRows: [], optFoot: '' };
+    if (!open) return out;
+    const amt = parseFloat(st.optAmt == null ? '10000' : st.optAmt) || 0, RF = 0.04, CAP = 0.25;
+    let cand = L.filter(x => x.sig && x.sig.action === 'BUY').sort((a, b) => b.conv - a.conv).slice(0, 12).filter(x => (st.bars[x.sym] || []).length >= 200);
+    const dk = b => new Date((b.t < 1e12 ? b.t * 1000 : b.t) - 5 * 3600e3).toISOString().slice(0, 10);
+    const key = cand.map(x => x.sym + ':' + (st.bars[x.sym] || []).length).join(',');
+    let R = this.optCache && this.optCache.key === key ? this.optCache.R : null;
+    if (!R) {
+      let maps = cand.map(x => { const m = {}; (st.bars[x.sym] || []).slice(-300).forEach(b => { m[dk(b)] = b.c; }); return m; }), dates = [];
+      while (cand.length >= 4) {
+        dates = Object.keys(maps[0]).filter(d => maps.every(m => m[d] != null)).sort();
+        if (dates.length >= 120) break;
+        let w = 0; maps.forEach((m, i) => { if (Object.keys(m).length < Object.keys(maps[w]).length) w = i; }); cand.splice(w, 1); maps.splice(w, 1);
+      }
+      if (cand.length < 4 || dates.length < 120) { out.optMsg = 'Needs at least 4 BUY stocks with a year of shared history. Clear filters or run a Refresh scan, then try again.'; return out; }
+      dates = dates.slice(-253); const n = cand.length, T = dates.length - 1;
+      const r = []; for (let t = 1; t <= T; t++) r.push(cand.map((x, i) => maps[i][dates[t]] / maps[i][dates[t - 1]] - 1));
+      const mean = cand.map((_, i) => r.reduce((a, row) => a + row[i], 0) / T);
+      const S = cand.map((_, i) => cand.map((_, j) => { let c = 0; for (let t = 0; t < T; t++) c += (r[t][i] - mean[i]) * (r[t][j] - mean[j]); return c / (T - 1) * 252; }));
+      const SH = S.map((row, i) => row.map((v, j) => i === j ? v : v * 0.7));
+      R = { cand: cand.map(x => ({ sym: x.sym, name: x.name, score: x.sig.score })), S: SH };
+      this.optCache = { key, R };
+    }
+    const n = R.cand.length, S = R.S, mu = R.cand.map(c => RF + Math.max(0, Math.min(100, c.score)) / 100 * 0.15);
+    const proj = v => { let lo = Math.min(...v) - CAP, hi = Math.max(...v); for (let k = 0; k < 60; k++) { const t = (lo + hi) / 2, sum = v.reduce((a, x) => a + Math.max(0, Math.min(CAP, x - t)), 0); if (sum > 1) lo = t; else hi = t; } const t = (lo + hi) / 2; return v.map(x => Math.max(0, Math.min(CAP, x - t))); };
+    const Lm = Math.max(...S.map(row => row.reduce((a, x) => a + Math.abs(x), 0)));
+    const solve = (m, lam) => { let w = proj(new Array(n).fill(1 / n)); const eta = 1 / (lam * Lm); for (let it = 0; it < 1500; it++) { const g = w.map((_, i) => lam * S[i].reduce((a, x, j) => a + x * w[j], 0) - m[i]); w = proj(w.map((x, i) => x - eta * g[i])); } return w; };
+    const stat = w => { const ret = w.reduce((a, x, i) => a + x * mu[i], 0), vol = Math.sqrt(Math.max(1e-12, w.reduce((a, x, i) => a + x * S[i].reduce((b, y, j) => b + y * w[j], 0), 0))); return { ret, vol, sh: (ret - RF) / vol, eff: 1 / w.reduce((a, x) => a + x * x, 0) }; };
+    if (!R.W) {
+      const wMin0 = solve(new Array(n).fill(0), 1); let wSh0 = wMin0, best = -1e9;
+      [0.5, 1, 2, 4, 8, 16, 32].forEach(lam => { const w = solve(mu, lam), q = stat(w).sh; if (q > best) { best = q; wSh0 = w; } });
+      R.W = [new Array(n).fill(1 / n), wMin0, wSh0];
+    }
+    const wEq = R.W[0], wMin = R.W[1], wSh = R.W[2];
+    const strat = [['Equal split', wEq, 'Same amount in every stock. The simple baseline.'], ['Lowest risk', wMin, 'Mixes stocks that move differently to cut swings. Ignores forecasts.'], ['Best return per risk', wSh, 'Leans toward stronger signals while watching risk. Depends on a guessed return.']];
+    const cardBox = 'flex:1 1 200px;min-width:0;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:4px';
+    out.optCards = strat.map(([nm, w, why]) => { const q = stat(w); return { name: nm, line1: 'Risk ' + (q.vol * 100).toFixed(0) + '%/yr · Return ' + (q.ret * 100).toFixed(0) + '%/yr', line2: 'Return per risk ' + q.sh.toFixed(2) + ' · acts like ' + q.eff.toFixed(1) + ' equal stocks', why, style: cardBox }; });
+    const f = (w, i) => (w[i] * 100).toFixed(0) + '%' + (amt > 0 ? ' · $' + Math.round(w[i] * amt).toLocaleString('en-US') : '');
+    out.optRows = R.cand.map((c, i) => ({ sym: c.sym, name: c.name, score: String(c.score), a: f(wEq, i), b: f(wMin, i), c: f(wSh, i), open: () => this.setState({ sel: c.sym, detail: true }) })).sort((x, y) => wSh[R.cand.findIndex(z => z.sym === y.sym)] - wSh[R.cand.findIndex(z => z.sym === x.sym)]);
+    out.optReady = true;
+    out.optFoot = 'Built from the top ' + n + ' BUY stocks and last year\'s daily moves, with no more than 25% in one stock. Risk is how much the mix has swung over the past year. "Return" is not a forecast: it is a guess scaled from each stock\'s signal strength (4% plus up to 15%), so treat the Best-return-per-risk column as the least reliable. Past correlations change, and they often rise in a selloff. Not investment advice.';
+    return out;
+  }
+
+  exchVals() {
+    const st = this.state, on = st.scrAsset === 'exch', M = "font-family:'JetBrains Mono',monospace;";
+    const base = { scrExch: on, exSeg: [], exxSeg: [], exHead: [], exRows: [], exCaption: '', exMore: false, exShowMore: () => {}, exNote: '', exFoot: '' };
+    if (!on) return base;
+    const E = this.exch;
+    if (!E || !E.rows) { base.exNote = 'The NASDAQ/NYSE scan has not been published yet. The nightly job creates it: go to Actions → Daily calibration → Run workflow, wait for it to finish, then press Refresh scan.'; return base; }
+    const segS = a => 'padding:5px 10px;border-radius:5px;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap;' + (a ? 'background:var(--text);color:var(--bg)' : 'color:var(--mute)');
+    const cv = v => v == null || !isFinite(v) ? 'var(--mute)' : v > 0 ? 'var(--up)' : v < 0 ? 'var(--down)' : 'var(--mute)';
+    const flt = st.exFlt || 'All', exg = st.exEx || 'All', q = (st.termQ || '').trim().toUpperCase(), srt = st.exSort || { k: 'sc', d: -1 }, lim = st.exLimit || 50;
+    const fm = { All: () => true, Buy: x => x.a === 'BUY', Sell: x => x.a === 'SELL', Oversold: x => x.r < 30, Overbought: x => x.r > 70, 'New high': x => x.hi === 1 };
+    const inEx = x => exg === 'All' || (exg === 'NASDAQ' ? x.x === 'Q' : x.x === 'N');
+    const pool = E.rows.filter(inEx);
+    base.exSeg = Object.keys(fm).map(k => ({ label: k + ' ' + pool.filter(fm[k]).length, style: segS(flt === k), pick: () => this.setState({ exFlt: k, exLimit: 50 }) }));
+    base.exxSeg = ['All', 'NASDAQ', 'NYSE'].map(k => ({ label: k === 'All' ? 'Both' : k, style: segS(exg === k), pick: () => this.setState({ exEx: k, exLimit: 50 }) }));
+    const trk = { 'Strong up': 2, Up: 1, Mixed: 0, Down: -1, 'Strong down': -2 };
+    const get = { s: x => x.s, n: x => x.n, x: x => x.x, sec: x => x.sec, p: x => x.p, ch: x => x.ch, vol: x => x.vol, cap: x => x.cap, r: x => x.r, tr: x => trk[x.tr], a: x => ({ BUY: 1, HOLD: 0, SELL: -1 })[x.a], sc: x => x.sc };
+    const cols = [['#', ''], ['s', 'Symbol'], ['n', 'Name'], ['x', 'Exch'], ['sec', 'Sector'], ['p', 'Price', 'right'], ['ch', '1D', 'right'], ['vol', 'Volume', 'right'], ['cap', 'Mkt cap', 'right'], ['r', 'RSI', 'right'], ['tr', 'Trend'], ['a', 'Signal'], ['sc', 'Score', 'right']];
+    base.exHead = cols.map(([k, label, al]) => ({ label: label + (srt.k === k ? (srt.d < 0 ? ' ↓' : ' ↑') : ''), pick: () => { if (!get[k]) return; this.setState(s => ({ exSort: { k, d: s.exSort && s.exSort.k === k ? -s.exSort.d : (k === 's' || k === 'n' ? 1 : -1) }, exLimit: 50 })); }, style: M + 'font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:8px 0;white-space:nowrap;cursor:pointer;text-align:' + (al || 'left') + ';color:' + (srt.k === k ? 'var(--text)' : 'var(--mute)') }));
+    let rows = pool.filter(fm[flt] || fm.All).filter(x => !q || x.s.indexOf(q) === 0 || String(x.n).toUpperCase().indexOf(q) >= 0);
+    const g = get[srt.k] || get.sc; rows = rows.slice().sort((a, b) => { const A = g(a), B = g(b); return (A < B ? -1 : A > B ? 1 : 0) * srt.d; });
+    const tot = rows.length;
+    const R2 = M + 'font-size:11.5px;text-align:right;';
+    base.exRows = rows.slice(0, lim).map((x, k) => ({ n: String(k + 1), sym: x.s, name: x.n, ex: x.x === 'Q' ? 'NASDAQ' : 'NYSE', sector: x.sec, px: money(x.p), ch: (x.ch >= 0 ? '+' : '') + x.ch.toFixed(2) + '%', chStyle: R2 + 'font-weight:700;color:' + cv(x.ch), vol: fmtVol(x.vol), cap: bigMoney(x.cap),
+      r: String(x.r), rStyle: R2 + 'color:' + (x.r < 30 ? 'var(--up)' : x.r > 70 ? 'var(--down)' : 'var(--text)'), trend: x.tr, tStyle: 'font-size:11.5px;padding-left:10px;color:' + (/up/i.test(x.tr) ? 'var(--up)' : /down/i.test(x.tr) ? 'var(--down)' : 'var(--mute)'),
+      sig: x.a, sStyle: M + 'font-size:11px;font-weight:700;color:' + (x.a === 'BUY' ? 'var(--up)' : x.a === 'SELL' ? 'var(--down)' : 'var(--mute)'), score: (x.sc > 0 ? '+' : '') + x.sc.toFixed(1), scStyle: R2 + 'font-weight:700;color:' + cv(x.sc),
+      open: () => { if (!ASSETS.find(a => a.sym === x.s)) this.adopt({ sym: x.s, name: x.n, yh: x.s, kind: 'stock' }); this.setState({ sel: x.s, detail: true }); } }));
+    base.exCaption = tot + ' of ' + E.rows.length + ' stocks · scanned ' + new Date(E.updated).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    base.exMore = tot > lim; base.exShowMore = () => this.setState(s => ({ exLimit: (s.exLimit || 50) + 50 }));
+    base.exFoot = 'Prices, signals and scores are from last night\'s close and use the same rules as the Telegram bot, so the score scale differs from the main screener. Click a stock to open the full live analysis, including the macro check and earnings. Search uses the box at the top. This is not investment advice.';
+    return base;
   }
 
   macroView() {
@@ -5588,7 +5735,7 @@ class Component extends DCLogic {
   renderVals() {
     const st = this.state, key = st.detail && st.sel ? st.sel + '|' + (st.intraIv || '15m') : null;
     if (key !== this.openedKey) { this.openedKey = key; if (key) { const s = st.sel; setTimeout(() => { try { this.termOpen(s); } catch (e) { /* keep panel usable */ } }, 0); } }
-    return Object.assign(this.baseVals(), this.terminal(), this.intraVals(), this.fundVals(), this.cryptoVals(), this.indiaVals(), this.calVals(), this.briefVals());
+    return Object.assign(this.baseVals(), this.terminal(), this.intraVals(), this.fundVals(), this.cryptoVals(), this.indiaVals(), this.exchVals(), this.calVals(), this.briefVals());
   }
   spyDays() {
     const st = this.state, b = st.bars.SPY, d = st.idx && st.idx['^GSPC'];
@@ -6085,7 +6232,7 @@ class Component extends DCLogic {
       sigSeg: seg([['combined', 'Combined'], ['tech', 'Technical']], sigMode, v => this.setState({ sigMode: v })),
       sigNote: sigMode === 'combined' ? 'Technical signal + EMA trend + RSI extremes + options flow + news themes + quarterly setups + revenue growth + sector breadth.' : 'RSI divergence, MACD and EMA 10/50/100/200 signal only.',
       topBuys, topSells,
-      fltSeg, tblHead, tblRows, gridCols, tblCaption: tTot + ' stocks', ...this.macroView(), scrRefresh: () => this.refreshScreener(), scrRefreshLabel: st.scrBusy ? 'Scanning…' : '↻ Refresh scan', scrMsg: st.scrMsg || '',
+      fltSeg, tblHead, tblRows, gridCols, tblCaption: tTot + ' stocks', ...this.macroView(), ...this.optView(L), scrRefresh: () => this.refreshScreener(), scrRefreshLabel: st.scrBusy ? 'Scanning…' : '↻ Refresh scan', scrMsg: st.scrMsg || '',
       scrRefreshStyle: 'padding:4px 10px;border-radius:5px;font-size:11px;font-weight:600;border:1px solid var(--line);background:var(--panel2);color:var(--text);white-space:nowrap;cursor:' + (st.scrBusy ? 'default' : 'pointer') + ';opacity:' + (st.scrBusy ? '.6' : '1'), tblMore: tTot > (st.termLimit || 40), showMore: () => this.setState(s => ({ termLimit: (s.termLimit || 40) + 40 })),
       newsSeg: seg([['All', 'All'], ['Financial', 'Financial'], ['Geopolitical', 'Geopolitical']], ncat, v => this.setState({ newsCatT: v })), newsRows,
       themeRows, themeProg: tLoaded < THEMES.length ? 'reading ' + tLoaded + '/' + THEMES.length : THEMES.length + ' themes',
