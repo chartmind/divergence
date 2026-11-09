@@ -1241,7 +1241,8 @@ a:hover{color:oklch(0.44 0.12 165)}
                   <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)">Options plan · {{ IP.iv }} chart</span>
 
                 </div>
-                <sc-if value="{{ IP.loading }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;color:var(--mute)">Loading intraday bars…</span></sc-if>
+                <sc-if value="{{ IP.loading }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;color:var(--mute)">Loading intraday bars… (retries automatically if the free data relay is busy)</span></sc-if>
+                <sc-if value="{{ IP.failed }}" hint-placeholder-val="{{ false }}"><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><span style="font-size:12px;color:var(--mute)">Could not load intraday bars (the free data relays are busy or blocked). No options plan until they load.</span><span onClick="{{ IP.retry }}" style="font-size:11.5px;font-weight:600;padding:5px 10px;border-radius:5px;border:1px solid var(--line);color:var(--text);cursor:pointer">Retry</span></div></sc-if>
                 <sc-if value="{{ IP.ready }}" hint-placeholder-val="{{ false }}">
                   <div style="display:flex;flex-direction:column;gap:9px">
                     <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -1667,6 +1668,7 @@ function lazySave(key, fn, ms) {
 }
 function saveHtf(v) { lazySave(HTF_KEY, () => { try { localStorage.setItem(HTF_KEY, JSON.stringify(v)); } catch (e) { /* quota */ } }); }
 const HTF_GATE = { next: 0, until: 0, strikes: 0 };
+const proxiesOf = u => [u, 'https://r.jina.ai/' + u, 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u), 'https://corsproxy.io/?' + encodeURIComponent(u), 'https://api.allorigins.win/raw?url=' + encodeURIComponent(u)];
 const RATE_RE = /429|rate.?limit|too many requests/i;
 async function htfFetch(u, ms, prio) {
   for (let attempt = 0; attempt < 6; attempt++) {
@@ -1677,7 +1679,7 @@ async function htfFetch(u, ms, prio) {
     if (lane !== 'snext') HTF_GATE.next = Math.max(HTF_GATE.next, slot + 3000);
     if (slot > now) await new Promise(r => setTimeout(r, slot - now));
     let limited = false;
-    for (const s of ['https://r.jina.ai/' + u, 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u)]) {
+    for (const s of proxiesOf(u)) {
       const t = await grab(s, ms || 15000, true);
       if (t && t.limited) { limited = true; break; }
       if (!t) continue;
@@ -2203,7 +2205,7 @@ async function yahooSearch(q) {
 
 async function cboeChain(sym, priority) {
   const u = 'https://cdn.cboe.com/api/global/delayed_quotes/options/' + encodeURIComponent(sym) + '.json';
-  for (const s of ['https://r.jina.ai/' + u, 'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(u)]) {
+  for (const s of proxiesOf(u)) {
     const t = await gate(() => grab(s, 30000), !!priority);
     if (!t) continue;
     try { const j = JSON.parse(t.slice(t.indexOf('{'), t.lastIndexOf('}') + 1)); if (j && j.data && j.data.options) return j.data; } catch (e) { /* next route */ }
@@ -2579,7 +2581,7 @@ class Component extends DCLogic {
     minScore: this.props.minStrength ?? 55, rules: [true, true, false, true, false],
     ov: { e10: true, e50: true, e100: true, e200: true, rsi: true, macd: true, candles: true },
     favs: loadFavs(), query: '', remote: [], searching: false, filter: 'Favourites',
-    srcState: { crypto: 'connecting', equity: 'connecting' }, opts: {}, optMsg: {}, htf: loadHtf(), htfUni: [], htfEx: 'All', grow: loadGrow(), growUni: [], idx: (() => { try { const j = JSON.parse(localStorage.getItem(IDX_KEY)); return j && Date.now() - j.at < 36 * 3600e3 ? j.idx : null; } catch (e) { return null; } })(),
+    srcState: { crypto: 'connecting', equity: 'connecting' }, opts: {}, optMsg: {}, intraMsg: {}, htf: loadHtf(), htfUni: [], htfEx: 'All', grow: loadGrow(), growUni: [], idx: (() => { try { const j = JSON.parse(localStorage.getItem(IDX_KEY)); return j && Date.now() - j.at < 36 * 3600e3 ? j.idx : null; } catch (e) { return null; } })(),
     idxAt: (() => { try { const j = JSON.parse(localStorage.getItem(IDX_KEY)); return j && Date.now() - j.at < 36 * 3600e3 ? j.at - 9 * 60e3 : 0; } catch (e) { return 0; } })(),
     mNews: (() => { try { const j = JSON.parse(localStorage.getItem(IDX_KEY)); return (j && j.news) || []; } catch (e) { return []; } })(), sNews: {}, newsCat: 'All', idxGroup: 'All', fin: (() => { try { const f = JSON.parse(localStorage.getItem('divergence.fin.v1')) || {}; Object.keys(f).forEach(k => { if (f[k].loading) delete f[k]; }); return f; } catch (e) { return {}; } })(), growSize: 'All', growSort: 'growth'
   };
@@ -5363,7 +5365,7 @@ class Component extends DCLogic {
         const maxV = wk ? Math.max(1, ...wk.topC.map(g => g.vol), ...wk.topP.map(g => g.vol)) : 1;
         const bar = (g, col) => ({ k: money(g.k), vol: fmtVol(g.vol), oi: 'OI ' + fmtVol(g.oi), barStyle: 'height:6px;border-radius:3px;background:' + col + ';width:' + Math.max(3, g.vol / maxV * 100).toFixed(1) + '%' });
         const totV = wk ? wk.cVol + wk.pVol : 0;
-        const base = { show: true, iv: iv === '5m' ? '5-min' : iv === '4h' ? '4-hour' : '15-min', loading: !d, ready: false, noCt: false,
+        const base = { show: true, iv: iv === '5m' ? '5-min' : iv === '4h' ? '4-hour' : '15-min', loading: !d && st.intraMsg[iv + sym] !== 'failed', failed: !d && st.intraMsg[iv + sym] === 'failed', retry: () => { this.intraFail[iv + sym] = 0; this.setState(s => ({ intraMsg: Object.assign({}, s.intraMsg, { [iv + sym]: 'loading' }) })); this.loadIntraOne(sym, iv, 0); }, ready: false, noCt: false,
           hasWk: !!wk, wkLabel: wk ? 'Expiring ' + wk.label : '', wkSplit: wk ? 'Calls ' + fmtVol(wk.cVol) + ' · Puts ' + fmtVol(wk.pVol) : '',
           wkCallPct: 'height:100%;background:var(--up);width:' + (totV ? (wk.cVol / totV * 100).toFixed(1) : 50) + '%', wkPutPct: 'height:100%;background:var(--down);flex:1',
           wkC: wk ? wk.topC.map(g => bar(g, 'var(--up)')) : [], wkP: wk ? wk.topP.map(g => bar(g, 'var(--down)')) : [],
@@ -5741,19 +5743,27 @@ class Component extends DCLogic {
       fundCard: fc
     };
   }
+  loadIntraOne(sym, iv, n) {
+    const a0 = ASSETS.find(x => x.sym === sym); if (!a0 || this.dead) return;
+    const hv = ((this.state.intra || {})[iv] || {})[sym];
+    if (hv && Date.now() - hv.at < 4 * 60e3) return;
+    this.intraTry = this.intraTry || {}; const key = iv + sym; if (this.intraTry[key] === 'busy') return; this.intraTry[key] = 'busy';
+    if (n === 0) this.setState(s => ({ intraMsg: Object.assign({}, s.intraMsg, { [key]: 'loading' }) }));
+    const pr = a0.bin ? binanceIntra(a0.bin, iv) : sparkIntra([a0.yh || sym], iv).then(g => g && g !== 'limited' ? g[a0.yh || sym] : null);
+    pr.catch(() => null).then(d => {
+      this.intraTry[key] = 0; if (this.dead) return;
+      if (d) { this.setState(s => ({ intra: Object.assign({}, s.intra, { [iv]: Object.assign({}, s.intra[iv], { [sym]: Object.assign({ at: Date.now() }, d) }) }), intraMsg: Object.assign({}, s.intraMsg, { [key]: 'ok' }) })); return; }
+      if (n < 3) setTimeout(() => { if (this.state.sel === sym) this.loadIntraOne(sym, iv, n + 1); }, [6, 15, 30][n] * 1000);
+      else this.setState(s => ({ intraMsg: Object.assign({}, s.intraMsg, { [key]: 'failed' }) }));
+    });
+  }
   termOpen(sym) {
     if (!sym) return;
     {
       const b0 = this.state.bars[sym], a1 = ASSETS.find(x => x.sym === sym) || { sym, name: sym, yh: sym, kind: 'stock' };
       if (!b0 || b0.length < 30 || b0[b0.length - 1].synth) this.loadDetailBars(a1);
     }
-    try {
-      const a0 = ASSETS.find(x => x.sym === sym), iv = this.state.intraIv || '15m', hv = ((this.state.intra || {})[iv] || {})[sym];
-      if (a0 && !(hv && Date.now() - hv.at < 4 * 60e3)) {
-        const pr = a0.bin ? binanceIntra(a0.bin, iv) : sparkIntra([a0.yh || sym], iv).then(g => g && g !== 'limited' ? g[a0.yh || sym] : null);
-        pr.then(d => { if (d && !this.dead) this.setState(s => ({ intra: Object.assign({}, s.intra, { [iv]: Object.assign({}, s.intra[iv], { [sym]: Object.assign({ at: Date.now() }, d) }) }) })); }).catch(() => {});
-      }
-    } catch (e) { /* intraday optional */ }
+    try { const iv0 = this.state.intraIv || '15m'; this.intraFail = this.intraFail || {}; this.intraFail[iv0 + sym] = 0; this.loadIntraOne(sym, iv0, 0); } catch (e) { /* intraday optional */ }
     try { this.loadFin(sym); } catch (e) { /* no filings */ }
     try { this.loadOpts(sym); } catch (e) { /* not optionable */ }
     const a = ASSETS.find(x => x.sym === sym) || { sym, name: sym, yh: sym, kind: 'stock' };
