@@ -106,16 +106,17 @@ async function runCalibration(barsMap, spyDayClose, prev, newsLog) {
     if (si % 8 === 0) await new Promise(r => setTimeout(r, 0));
     const b = barsMap[syms[si]], n = b.length, cl = b.map(x => x.c), hi = b.map(x => x.h != null ? x.h : x.c), lo = b.map(x => x.l != null ? x.l : x.c), v = b.map(x => x.v || 0);
     if (b.some(x => !isFinite(x.c) || x.c <= 0)) continue;
-    const E10 = ema(cl, 10), E50 = ema(cl, 50), E200 = ema(cl, 200), R = rsi(cl, 14), H = macd(cl).hist;
+    const E10 = ema(cl, 10), E50 = ema(cl, 50), E200 = ema(cl, 200), R = rsi(cl, 14), H = macd(cl).hist, nextOk = {};
     for (let k = 220; k < n - H20; k++) {
       const d0 = dayKey(b[k].t), d1 = dayKey(b[k + H20].t); if (d0 == null || d1 == null || d1 > valEnd + 30) continue;
       const s0 = spyDayClose.at(d0), s1 = spyDayClose.at(d1); if (!s0 || !s1) continue;
       const f = calFeatsAt(cl, hi, lo, v, E10, E50, E200, R, H, k);
       const ex = (cl[k + H20] / cl[k] - 1) - (s1 / s0 - 1) - COST;
-      for (const id in f) { if (!f[id]) continue; const rare = id === 'macdUp' || id === 'macdDn' || id === 'confirmOS' || id === 'bbdcRev' || id === 'volUp' || id === 'volDn' || id === 'newHigh' || id === 'golden' || id === 'death' || id === 'donUp' || id === 'donDn' || id === 'dn3'; if (!rare && k % 5) continue; (d0 <= cutoff ? ev[id].T : d0 <= valEnd ? ev[id].V : null)?.push(ex); const rg = regAt(d0); if (rg) evR[rg][id].push(ex); }
+      for (const id in f) { if (!f[id]) continue; if (k < (nextOk[id] || 0)) continue; nextOk[id] = k + H20; (d0 <= cutoff ? ev[id].T : d0 <= valEnd ? ev[id].V : null)?.push(ex); const rg = regAt(d0); if (rg) evR[rg][id].push({ d: d0, ex }); }
     }
   }
-  (newsLog || []).forEach(e => { if (e.ex == null) return; (e.d <= cutoff ? ev.news.T : ev.news.V).push(e.ex); const rg = regAt(e.d); if (rg) evR[rg].news.push(e.ex); });
+  (newsLog || []).forEach(e => { if (e.ex == null) return; (e.d <= cutoff ? ev.news.T : ev.news.V).push(e.ex); const rg = regAt(e.d); if (rg) evR[rg].news.push({ d: e.d, ex: e.ex }); });
+  const halfMeans = A => { const s = A.slice().sort((x, y) => x.d - y.d), h = s.length >> 1, m = z => z.reduce((t, x) => t + x.ex, 0) / Math.max(1, z.length); return [m(s.slice(0, h)), m(s.slice(h)), h, s.length - h]; };
   const stat = a => { const n = a.length; if (!n) return { n: 0, m: 0, hit: 0, sd: 0 }; const m = a.reduce((x, y) => x + y, 0) / n; let s = 0; a.forEach(x => { s += (x - m) * (x - m); }); return { n, m, hit: a.filter(x => x > 0).length / n, sd: Math.sqrt(s / Math.max(1, n - 1)) }; };
   const feats = {}, log = [];
   CAL_FEATS.forEach(([id, label]) => {
@@ -136,9 +137,9 @@ async function runCalibration(barsMap, spyDayClose, prev, newsLog) {
   });
   const byReg = {};
   CAL_REGS.forEach(g => { byReg[g] = {}; CAL_FEATS.forEach(([id]) => {
-    const S = stat(evR[g][id]); let pts = 0, status = 'active';
+    const A = evR[g][id], S = stat(A.map(x => x.ex)); let pts = 0, status = 'active';
     if (S.n < 30) status = 'too few cases';
-    else { const t = S.m / (S.sd / Math.sqrt(S.n) || 1); pts = Math.max(-3, Math.min(3, t)) * 2.5 * Math.min(1, S.n / 200); if (Math.abs(t) < 2) { pts = 0; status = 'no edge'; } }
+    else { const t = S.m / (S.sd / Math.sqrt(S.n) || 1); pts = Math.max(-3, Math.min(3, t)) * 2.5 * Math.min(1, S.n / 200); if (Math.abs(t) < 2) { pts = 0; status = 'no edge'; } else { const h = halfMeans(A); if (h[2] < 10 || h[3] < 10 || Math.sign(h[0]) !== Math.sign(S.m) || Math.sign(h[1]) !== Math.sign(S.m)) { pts = 0; status = 'inconsistent'; } } }
     const old = prev && prev.byReg && prev.byReg[g] && prev.byReg[g][id] ? prev.byReg[g][id].pts : null;
     if (old != null) pts = old + Math.max(-2, Math.min(2, pts - old));
     byReg[g][id] = { pts: Math.round(pts * 10) / 10, status, n: S.n, m: S.m, hit: S.hit };
