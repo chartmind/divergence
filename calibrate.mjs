@@ -235,11 +235,12 @@ async function indiaStage(now) {
 // One call per day returns every company that reported (EPS, consensus, % surprise) or will report (consensus, timing).
 // We keep the last 6 reports per universe stock, plus the reporters for the next 10 days. Best effort: never fails the job.
 const EARN_BACKFILL_DAYS = 400, EARN_PER_RUN = 140;
+const NQ_HEADERS = { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Accept: 'application/json, text/plain, */*', Origin: 'https://www.nasdaq.com', Referer: 'https://www.nasdaq.com/' };
 const nq = v => { if (v == null) return null; const s = String(v).trim(); if (!s || /^n\/?a$/i.test(s)) return null; const neg = /^\(.*\)$/.test(s) || s.startsWith('-'); const n = parseFloat(s.replace(/[^0-9.]/g, '')); return isFinite(n) ? (neg ? -n : n) : null; };
 async function nasdaqDay(date) {
   for (let t = 0; t < 3; t++) {
     try {
-      const r = await fetch('https://api.nasdaq.com/api/calendar/earnings?date=' + date, { headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36', Accept: 'application/json, text/plain, */*', Origin: 'https://www.nasdaq.com', Referer: 'https://www.nasdaq.com/' }, signal: AbortSignal.timeout(20000) });
+      const r = await fetch('https://api.nasdaq.com/api/calendar/earnings?date=' + date, { headers: NQ_HEADERS, signal: AbortSignal.timeout(20000) });
       if (r.status === 429) { await sleep(4000 * (t + 1)); continue; }
       if (!r.ok) throw new Error(r.status);
       const j = await r.json(), rows = j && j.data && j.data.rows;
@@ -287,6 +288,68 @@ async function earningsStage(now, symSet) {
   const left = need.length - Math.min(need.length, EARN_PER_RUN);
   console.log('earnings:', Object.keys(q).length, 'stocks with history ·', Object.keys(up).length, 'reporting in next 10 days · read', got, 'past days ·', left, 'days still to back-fill');
   await writeFile(new URL('earnings.json', OUT), JSON.stringify({ updated: now, asOf: etToday, done, q, up: keepUp }));
+}
+
+// ---------- NASDAQ + NYSE screener ----------
+// Every liquid common stock listed on NASDAQ or NYSE (price >= $5, volume >= 300K, market cap >= $300M, best EXCH_MAX by size).
+// Signals are computed here with the same rules as the Telegram bot and published as one compact file, so the app does no heavy work.
+const EXCH_MAX = 2500, EXCH_BUDGET_MS = 16 * 60 * 1000;
+function regPts(cal, id) { if (!cal || !cal.feats || !cal.feats[id]) return 0; const R = cal.byReg && cal.reg ? cal.byReg[cal.reg][id] : null; if (R && R.n >= 30) return R.status === 'active' ? R.pts : 0; return cal.feats[id].pts * 0.5; }
+function signalOf(b, cal) {
+  if (!b || b.length < 220) return null;
+  const cl = b.map(x => x.c), hi = b.map(x => x.h != null ? x.h : x.c), lo = b.map(x => x.l != null ? x.l : x.c), v = b.map(x => x.v || 0);
+  const k = cl.length - 1, p = cl[k], E10 = ema(cl, 10), E50 = ema(cl, 50), E200 = ema(cl, 200), R = rsi(cl, 14), H = macd(cl).hist;
+  const f = calFeatsAt(cl, hi, lo, v, E10, E50, E200, R, H, k);
+  let s = (p > E200[k] ? 1.5 : -1.5) + (E50[k] > E200[k] ? 1 : -1) + (R[k] < 30 ? 1 : R[k] > 70 ? -1 : 0) + (H[k] > 0 ? 0.5 : -0.5);
+  for (const id in f) { if (f[id]) s += regPts(cal, id); }
+  const lo52 = Math.min(...lo.slice(-252)), down = p < E200[k] && E50[k] < E200[k];
+  let a = s >= 3 ? 'BUY' : s <= -3 ? 'SELL' : 'HOLD';
+  if (a === 'BUY' && down && p < E50[k]) a = 'HOLD';
+  if (a === 'SELL' && R[k] < 32 && p < lo52 * 1.06) a = 'HOLD';
+  const trend = p > E10[k] && E10[k] > E50[k] && E50[k] > E200[k] ? 'Strong up' : p > E50[k] && E50[k] > E200[k] ? 'Up' : p < E10[k] && E10[k] < E50[k] && E50[k] < E200[k] ? 'Strong down' : p < E50[k] && E50[k] < E200[k] ? 'Down' : 'Mixed';
+  return { a, s: Math.round(s * 10) / 10, r: Math.round(R[k]), trend };
+}
+const nnum = v => { const n = parseFloat(String(v == null ? '' : v).replace(/[$,%\s]/g, '')); return isFinite(n) ? n : null; };
+async function nasdaqScreener(ex) {
+  for (let t = 0; t < 3; t++) {
+    try {
+      const r = await fetch('https://api.nasdaq.com/api/screener/stocks?tableonly=true&limit=10000&download=true&exchange=' + ex, { headers: NQ_HEADERS, signal: AbortSignal.timeout(30000) });
+      if (!r.ok) throw new Error(r.status);
+      const d = (await r.json()).data, rows = d && (d.rows || (d.table && d.table.rows));
+      if (Array.isArray(rows) && rows.length) return rows;
+      console.log('exchange: unexpected format for', ex, 'keys:', d ? Object.keys(d).join(',') : 'none');
+    } catch { await sleep(2000 * (t + 1)); }
+  }
+  return null;
+}
+async function exchangeStage(now, cal) {
+  const list = [];
+  for (const [ex, tag] of [['nasdaq', 'Q'], ['nyse', 'N']]) {
+    const rows = await nasdaqScreener(ex);
+    if (!rows) { console.log('exchange: could not read the', ex, 'list, skipping'); return; }
+    rows.forEach(r => { const s = String(r.symbol || '').trim().toUpperCase(), p = nnum(r.lastsale), v = nnum(r.volume), c = nnum(r.marketCap); if (/^[A-Z]{1,5}$/.test(s) && p >= 5 && v >= 3e5 && c >= 3e8) list.push({ s, x: tag, n: r.name || s, sec: r.sector || '', cap: c }); });
+  }
+  const seen = new Set(), uni = list.sort((a, b) => b.cap - a.cap).filter(u => !seen.has(u.s) && seen.add(u.s)).slice(0, EXCH_MAX);
+  const rows = [], t0 = Date.now(); let next = 0;
+  async function worker() {
+    while (next < uni.length) {
+      if (Date.now() - t0 > EXCH_BUDGET_MS) return;
+      const u = uni[next++];
+      try {
+        const b = await yahooBars(u.s), g = b && signalOf(b, cal);
+        if (g) {
+          const n = b.length, cl = b.map(x => x.c), p = cl[n - 1], tail = cl.slice(-252), hi = Math.max(...tail), lo = Math.min(...tail);
+          const dv = b.slice(-50).reduce((a, x) => a + x.c * x.v, 0) / 50;
+          if (dv >= 3e6) rows.push({ s: u.s, n: u.n, x: u.x, sec: u.sec, cap: u.cap, p: Math.round(p * 100) / 100, ch: Math.round((p / cl[n - 2] - 1) * 1e4) / 100, vol: b[n - 1].v, a: g.a, sc: g.s, r: g.r, tr: g.trend, hi: p >= hi * 0.995 ? 1 : 0 });
+        }
+      } catch { /* skip symbol */ }
+      await sleep(200);
+    }
+  }
+  await Promise.all([worker(), worker(), worker(), worker()]);
+  console.log('exchange:', rows.length, 'stocks scored of', uni.length, 'candidates');
+  if (rows.length < 300) { console.log('exchange: too few stocks scored, keeping the previous file'); return; }
+  await writeFile(new URL('exchange.json', OUT), JSON.stringify({ updated: now, rows }));
 }
 
 async function main() {
@@ -341,6 +404,7 @@ async function main() {
   await writeFile(new URL('history/' + day + '.json', OUT), JSON.stringify({ updated: now, reg: cal.reg, stocks: cal.stocks, feats: Object.fromEntries(Object.entries(cal.feats).map(([k, f]) => [k, { pts: f.pts, status: f.status, nT: f.nT, mT: f.mT }])), byReg: cal.byReg }));
   console.log('calibrated', cal.stocks, 'stocks · regime', cal.reg, '· changes', cal.log.length);
   try { await earningsStage(now, new Set(symbols.map(u => u.s))); } catch (e) { console.log('earnings stage failed:', e && e.message); }
+  try { await exchangeStage(now, cal); } catch (e) { console.log('exchange stage failed:', e && e.message); }
   try { await indiaStage(now); } catch (e) { console.log('india stage failed:', e && e.message); }
 }
 main().catch(e => { console.error(e); process.exit(1); });
