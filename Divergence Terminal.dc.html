@@ -3424,6 +3424,8 @@ class Component extends DCLogic {
     if (!this.dead && (BF || SG)) this.setState({ pubBrief: BF, pubSigs: SG });
     const EX = await get('data/exchange.json');
     if (EX && EX.rows && !this.dead) { this.exch = EX; this.setState({ exchTick: Date.now() }); }
+    const IC = await get('data/intraday.json');
+    if (IC && IC.iv && !this.dead) { this.intraCal = IC; this.setState({ icTick: Date.now() }); }
     const EA = await get('data/earnings.json');
     if (EA && EA.q && !this.dead) { this.earn = EA; this.setState({ earnTick: Date.now() }); }
     const B = await get('data/bars.json');
@@ -5463,12 +5465,15 @@ class Component extends DCLogic {
         const rrOn = st.confRR !== false;
         const hiddenRR = C0.filter(r => r.side && r.rr != null && r.rr < 2).length;
         const C = rrOn ? C0.filter(r => !(r.side && r.rr != null && r.rr < 2)) : C0;
-        const fails = { warn: 0, rr: 0, earn: 0, opt: 0, flow: 0 }, best = [];
+        const PF = {}; Object.keys(this.btI || {}).forEach(k => { const iv = k.slice(0, k.indexOf('4h') === 0 ? 2 : 3); (this.btI[k].trades || []).forEach(t => { if (t.res === 'open') return; const g = PF[iv + '|' + t.side] || (PF[iv + '|' + t.side] = { n: 0, w: 0, r: 0 }); g.n++; if (t.res === 'target') g.w++; g.r += t.r; }); });
+        const proven = (iv, side) => { const g = PF[iv + '|' + side]; return !!g && g.n >= 30 && g.r / g.n > 0.05 && g.w / g.n >= 0.45; };
+        const fails = { warn: 0, rr: 0, earn: 0, opt: 0, flow: 0, proof: 0 }, best = [];
         C0.filter(r => r.kind !== 'crypto' && r.side).forEach(r => {
           if (r.quality !== 'clean') { fails.warn++; return; }
           if (r.rr == null || r.rr < 2) { fails.rr++; return; }
           if (r.earnBefore) { fails.earn++; return; }
           if (!r.op || !r.ct) { fails.opt++; return; }
+          if (!['15m', '4h'].every(iv => proven(iv, r.side))) { fails.proof++; return; }
           const fd = r.op.dir || 0; if (r.side === 'CALL' ? fd < -0.3 : fd > 0.3) { fails.flow++; return; }
           const agree = r.side === 'CALL' ? r.bull : r.bear, fAg = r.side === 'CALL' ? fd > 0.3 : fd < -0.3;
           r.bscore = agree * 3 + Math.min(r.rr, 4) + (fAg ? 2 : 0) + (r.iv && r.iv.cheap ? 1 : 0) + Math.abs(r.sum) / 5;
@@ -5503,8 +5508,10 @@ class Component extends DCLogic {
             onSave: () => { if (saved) return; const nx = (st.journal || []).concat([Object.assign({ id: r.sym + r.side + Date.now(), at: Date.now(), status: 'open' }, tradeOf(r))]); lsSet('divergence.journal.v1', nx); this.setState({ journal: nx }); },
             open: () => this.setState({ sel: r.sym, detail: true }) };
         });
-        const fl = [[fails.warn, 'with warnings or timeframes still loading'], [fails.rr, 'below 1:2 risk/reward'], [fails.earn, 'with earnings before expiry'], [fails.opt, 'waiting for options data'], [fails.flow, 'with options flow against the trade']].filter(x => x[0] > 0).map(x => x[0] + ' ' + x[1]).join(' · ');
+        const fl = [[fails.warn, 'with warnings or timeframes still loading'], [fails.rr, 'below 1:2 risk/reward'], [fails.earn, 'with earnings before expiry'], [fails.opt, 'waiting for options data'], [fails.flow, 'with options flow against the trade'], [fails.proof, 'held back because the 15-min or 4-hour ' + 'backtest has not proven an edge for this side (needs 30+ trades, positive average R, win rate 45%+)']].filter(x => x[0] > 0).map(x => x[0] + ' ' + x[1]).join(' · ');
         const best5Note = best.length >= 5 ? 'Ranked by timeframe agreement, risk/reward, options flow and IV. Built for 1–5 day holds with expiries 1–3 weeks out.' : (best.length ? 'Only ' + best.length + ' trade' + (best.length > 1 ? 's pass' : ' passes') + ' every rule right now.' : 'No trade passes every rule right now.') + (fl ? ' Not shown: ' + fl + '.' : '');
+        const icN = iv => { const F = this.intraCal && this.intraCal.iv[iv] && this.intraCal.iv[iv].feats; return F ? Object.values(F).filter(x => x.status === 'edge').length : null; };
+        const icTxt = this.intraCal ? ' Nightly test on ' + this.intraCal.symbols + ' stocks and coins: ' + icN('15m') + ' of ' + CAL_FEATS.length + ' signals show a repeatable edge on 15-min bars, ' + icN('4h') + ' on 4-hour bars. Few or none means short-term signals are mostly noise.' : '';
         const pctS = v => (v >= 0 ? '+' : '') + v.toFixed(1) + '%';
         const J = st.journal || [];
         const journalRows = J.slice().reverse().slice(0, 25).map(j => {
@@ -5522,7 +5529,7 @@ class Component extends DCLogic {
           remove: () => { const nx = (st.alerts || []).filter(x => x.id !== a.id); lsSet('divergence.alerts.v1', nx); this.setState({ alerts: nx }); } }));
         const perm = typeof Notification === 'undefined' ? 'unsupported' : Notification.permission;
         const extra = {
-          best5Cards, best5Note, best5Empty: best5Cards.length === 0,
+          best5Cards, best5Note: best5Note + icTxt, best5Empty: best5Cards.length === 0,
           acctVal: st.acct, riskVal: st.riskPct,
           onAcct: e => { const v = e.target.value.replace(/[^0-9.]/g, ''); lsSet('divergence.size.v1', { acct: v, risk: this.state.riskPct }); this.setState({ acct: v }); },
           onRisk: e => { const v = e.target.value.replace(/[^0-9.]/g, ''); lsSet('divergence.size.v1', { acct: this.state.acct, risk: v }); this.setState({ riskPct: v }); },
