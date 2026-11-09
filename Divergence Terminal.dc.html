@@ -2454,7 +2454,7 @@ function bbdc(b, RS, P) {
 }
 const CAL_REGS = ['bullCalm', 'bullVol', 'bearCalm', 'bearVol'];
 const CAL_REG_LBL = { bullCalm: 'Uptrend · calm', bullVol: 'Uptrend · volatile', bearCalm: 'Downtrend · calm', bearVol: 'Downtrend · volatile' };
-const STRAT_OF = { trendUp: 'Trend following', trendDn: 'Trend following', oversold: 'Buy the dip', bbLow: 'Buy the dip', confirmOS: 'Confirmed bounce', bbdcRev: 'Reversal', macdUp: 'Momentum', macdDn: 'Momentum', volUp: 'Breakout', volDn: 'Breakdown', newHigh: 'Breakout', overbought: 'Fade strength', bbHigh: 'Fade strength', news: 'News / themes' };
+const STRAT_OF = { trendUp: 'Trend following', trendDn: 'Trend following', oversold: 'Buy the dip', bbLow: 'Buy the dip', confirmOS: 'Confirmed bounce', bbdcRev: 'Reversal', macdUp: 'Momentum', macdDn: 'Momentum', volUp: 'Breakout', volDn: 'Breakdown', newHigh: 'Breakout', overbought: 'Fade strength', bbHigh: 'Fade strength', news: 'News / themes', nearHigh: 'Breakout', mom12: 'Momentum', momLose: 'Momentum', rev1m: 'Reversal', rev1mUp: 'Fade strength', golden: 'Trend following', death: 'Trend following', donUp: 'Breakout', donDn: 'Breakdown', pullback: 'Buy the dip', lowVol: 'Low volatility', stretched: 'Fade strength', deepBelow: 'Buy the dip', dn3: 'Reversal' };
 function regPts(cal, id) { if (!cal || !cal.feats || !cal.feats[id]) return 0; const R = cal.byReg && cal.reg ? cal.byReg[cal.reg][id] : null; if (R && R.n >= 30) return R.status === 'active' ? R.pts : 0; return cal.feats[id].pts * 0.5; }
 const CAL_KEY = 'divergence.cal.v1', NEWSLOG_KEY = 'divergence.newslog.v1';
 const CAL_FEATS = [
@@ -2465,7 +2465,22 @@ const CAL_FEATS = [
   ['bbdcRev', 'BB/DC low + RSI divergence'],
   ['macdUp', 'MACD cross up'], ['macdDn', 'MACD cross down'],
   ['volUp', 'Volume surge on an up day (1.8× avg)'], ['volDn', 'Volume surge on a down day'],
-  ['newHigh', 'New 52-week high'], ['news', 'Active news / shortage theme']
+  ['newHigh', 'New 52-week high'],
+  ['nearHigh', 'Near 52-week high (within 3%, not at it)'],
+  ['mom12', '12-month winner (up 30%+, skipping the last month)'],
+  ['momLose', '12-month loser (down 20%+, skipping the last month)'],
+  ['rev1m', 'Down 15%+ in one month'],
+  ['rev1mUp', 'Up 20%+ in one month'],
+  ['golden', 'Golden cross (EMA 50 above EMA 200, last 5 days)'],
+  ['death', 'Death cross (EMA 50 below EMA 200, last 5 days)'],
+  ['donUp', 'Close above the prior 20-day high'],
+  ['donDn', 'Close below the prior 20-day low'],
+  ['pullback', 'Uptrend with RSI below 45'],
+  ['lowVol', 'Low volatility (under 25% a year)'],
+  ['stretched', 'More than 40% above EMA 200'],
+  ['deepBelow', 'More than 30% below EMA 200'],
+  ['dn3', 'Sharp 3-day drop (8%+)'],
+  ['news', 'Active news / shortage theme']
 ];
 function calFeatsAt(cl, hi, lo, v, E10, E50, E200, R, H, k) {
   const f = {}, c = cl[k];
@@ -2485,6 +2500,18 @@ function calFeatsAt(cl, hi, lo, v, E10, E50, E200, R, H, k) {
   f.volUp = surge && c > cl[k - 1]; f.volDn = surge && c < cl[k - 1];
   let mx = -Infinity; for (let j = Math.max(0, k - 251); j < k; j++) mx = Math.max(mx, cl[j]);
   f.newHigh = c >= mx;
+  f.nearHigh = c < mx && c >= mx * 0.97;
+  const m12 = k >= 252 ? cl[k - 21] / cl[k - 252] - 1 : null, m1 = c / cl[k - 21] - 1;
+  f.mom12 = m12 != null && m12 >= 0.3; f.momLose = m12 != null && m12 <= -0.2;
+  f.rev1m = m1 <= -0.15; f.rev1mUp = m1 >= 0.2;
+  f.golden = E50[k] > E200[k] && E50[k - 5] <= E200[k - 5]; f.death = E50[k] < E200[k] && E50[k - 5] >= E200[k - 5];
+  let h20 = -Infinity, l20 = Infinity; for (let j = k - 20; j < k; j++) { h20 = Math.max(h20, hi[j]); l20 = Math.min(l20, lo[j]); }
+  f.donUp = c > h20; f.donDn = c < l20;
+  f.pullback = c > E200[k] && E50[k] > E200[k] && R[k] != null && R[k] < 45;
+  let sr = 0, sr2 = 0; if (k >= 60) for (let j = k - 59; j <= k; j++) { const r = Math.log(cl[j] / cl[j - 1]); sr += r; sr2 += r * r; }
+  f.lowVol = k >= 60 && Math.sqrt(Math.max(0, sr2 / 60 - (sr / 60) * (sr / 60))) * Math.sqrt(252) < 0.25;
+  f.stretched = c > E200[k] * 1.4; f.deepBelow = c < E200[k] * 0.7;
+  f.dn3 = c / cl[k - 3] - 1 <= -0.08;
   return f;
 }
 async function runCalibration(barsMap, spyDayClose, prev, newsLog) {
@@ -2506,7 +2533,7 @@ async function runCalibration(barsMap, spyDayClose, prev, newsLog) {
       const s0 = spyDayClose.at(d0), s1 = spyDayClose.at(d1); if (!s0 || !s1) continue;
       const f = calFeatsAt(cl, hi, lo, v, E10, E50, E200, R, H, k);
       const ex = (cl[k + H20] / cl[k] - 1) - (s1 / s0 - 1) - COST;
-      for (const id in f) { if (!f[id]) continue; const rare = id === 'macdUp' || id === 'macdDn' || id === 'confirmOS' || id === 'bbdcRev' || id === 'volUp' || id === 'volDn' || id === 'newHigh'; if (!rare && k % 5) continue; (d0 <= cutoff ? ev[id].T : d0 <= valEnd ? ev[id].V : null)?.push(ex); const rg = regAt(d0); if (rg) evR[rg][id].push(ex); }
+      for (const id in f) { if (!f[id]) continue; const rare = id === 'macdUp' || id === 'macdDn' || id === 'confirmOS' || id === 'bbdcRev' || id === 'volUp' || id === 'volDn' || id === 'newHigh' || id === 'golden' || id === 'death' || id === 'donUp' || id === 'donDn' || id === 'dn3'; if (!rare && k % 5) continue; (d0 <= cutoff ? ev[id].T : d0 <= valEnd ? ev[id].V : null)?.push(ex); const rg = regAt(d0); if (rg) evR[rg][id].push(ex); }
     }
   }
   (newsLog || []).forEach(e => { if (e.ex == null) return; (e.d <= cutoff ? ev.news.T : ev.news.V).push(e.ex); const rg = regAt(e.d); if (rg) evR[rg].news.push(e.ex); });
@@ -2519,7 +2546,7 @@ async function runCalibration(barsMap, spyDayClose, prev, newsLog) {
     else {
       const t = T.m / (T.sd / Math.sqrt(T.n) || 1);
       pts = Math.max(-3, Math.min(3, t)) * 2.5 * Math.min(1, T.n / 200);
-      if (Math.abs(t) < 1.5) { pts = 0; status = 'no edge'; }
+      if (Math.abs(t) < 2) { pts = 0; status = 'no edge'; }
       else if (V.n >= 20 && Math.sign(V.m) !== Math.sign(T.m)) { pts = 0; status = 'failed recent test'; }
     }
     const old = prev && prev.feats && prev.feats[id] ? prev.feats[id].pts : 0;
@@ -2532,7 +2559,7 @@ async function runCalibration(barsMap, spyDayClose, prev, newsLog) {
   CAL_REGS.forEach(g => { byReg[g] = {}; CAL_FEATS.forEach(([id]) => {
     const S = stat(evR[g][id]); let pts = 0, status = 'active';
     if (S.n < 30) status = 'too few cases';
-    else { const t = S.m / (S.sd / Math.sqrt(S.n) || 1); pts = Math.max(-3, Math.min(3, t)) * 2.5 * Math.min(1, S.n / 200); if (Math.abs(t) < 1.5) { pts = 0; status = 'no edge'; } }
+    else { const t = S.m / (S.sd / Math.sqrt(S.n) || 1); pts = Math.max(-3, Math.min(3, t)) * 2.5 * Math.min(1, S.n / 200); if (Math.abs(t) < 2) { pts = 0; status = 'no edge'; } }
     const old = prev && prev.byReg && prev.byReg[g] && prev.byReg[g][id] ? prev.byReg[g][id].pts : null;
     if (old != null) pts = old + Math.max(-2, Math.min(2, pts - old));
     byReg[g][id] = { pts: Math.round(pts * 10) / 10, status, n: S.n, m: S.m, hit: S.hit };
