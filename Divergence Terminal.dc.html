@@ -3579,9 +3579,9 @@ class Component extends DCLogic {
     const segS = on => 'padding:5px 10px;border-radius:5px;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap;' + (on ? 'background:var(--text);color:var(--bg)' : 'color:var(--mute)');
     const isC = st.scrAsset === 'crypto';
     const base = {
-      scrAssetSeg: [['stocks', 'US stocks'], ['exch', 'NASDAQ/NYSE'], ['india', 'India'], ['crypto', 'Crypto']].map(([id, label]) => ({ label, style: segS((st.scrAsset || 'stocks') === id), pick: () => { try { sessionStorage.setItem('divergence.scrAsset', id); } catch (e) { /* ignore */ } this.setState({ scrAsset: id, scrMsg: '' }); if (id === 'crypto') this.cryptoBoot(); if (id === 'india') this.indiaBoot(); } })),
+      scrAssetSeg: [['stocks', 'S&P 500'], ['exch', 'NASDAQ/NYSE'], ['india', 'India'], ['crypto', 'Crypto']].map(([id, label]) => ({ label, style: segS((st.scrAsset || 'stocks') === id), pick: () => { try { sessionStorage.setItem('divergence.scrAsset', id); } catch (e) { /* ignore */ } this.setState({ scrAsset: id, scrMsg: '' }); if (id === 'crypto') this.cryptoBoot(); if (id === 'india') this.indiaBoot(); } })),
       scrStocks: !isC && st.scrAsset !== 'india' && st.scrAsset !== 'exch', scrCrypto: isC, scrIndia: st.scrAsset === 'india',
-      scrAssetNote: st.scrAsset === 'india' ? 'NSE large and mid caps, in rupees, with the same buy/sell rules' : st.scrAsset === 'exch' ? 'Every liquid NASDAQ and NYSE stock, scored by the nightly job' : isC ? 'Top 1,000 coins, sorted by market cap. Type in the search bar to filter. Coins with no max supply (ETH, SOL) score low on scarcity, so they rarely appear in the hold picks' : 'US stocks scanned by the app',
+      scrAssetNote: st.scrAsset === 'india' ? 'NSE large and mid caps, in rupees, with the same buy/sell rules' : st.scrAsset === 'exch' ? 'Every liquid NASDAQ and NYSE stock, scored by the nightly job' : isC ? 'Top 1,000 coins, sorted by market cap. Type in the search bar to filter. Coins with no max supply (ETH, SOL) score low on scarcity, so they rarely appear in the hold picks' : 'S&P 500 stocks scanned by the app',
       cHoldCards: [], cHoldEmpty: false, cHoldEmptyTxt: '', cHoldNote: '', cFltSeg: [], cHead: [], cRows: [], cGrid: '1fr', cCaption: '', cMore: false, cShowMore: () => {}
     };
     if (!isC) return base;
