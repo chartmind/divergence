@@ -44,14 +44,23 @@ function parse13f(xml) {
   return Object.values(out);
 }
 
-async function get(url, tries = 3) {
+// If the SEC refuses the GitHub runner (HTTP 403), the job switches to the r.jina.ai relay, the same one the app uses in the browser.
+let viaJina = false;
+const pace = () => sleep(viaJina ? 1500 : 220);
+async function get(url, tries = 3, html = false) {
   for (let t = 0; t < tries; t++) {
-    try { const r = await fetch(url, { headers: UA }); lastStatus = r.status; if (r.status === 429) { await sleep(8000 * (t + 1)); continue; } if (!r.ok) { if (r.status === 403) console.log('SEC answered 403 for ' + url + ' - check the User-Agent/SEC_CONTACT'); return null; } return await r.text(); }
-    catch (e) { await sleep(2000 * (t + 1)); }
+    try {
+      const r = await fetch(viaJina ? 'https://r.jina.ai/' + url : url, { headers: viaJina ? (html ? { 'X-Return-Format': 'html' } : {}) : UA });
+      lastStatus = r.status;
+      if (r.status === 403 && !viaJina) { console.log('SEC answered 403 for the runner, switching to the relay'); viaJina = true; t--; continue; }
+      if (r.status === 429) { await sleep(10000 * (t + 1)); continue; }
+      if (!r.ok) return null;
+      return await r.text();
+    } catch (e) { await sleep(2000 * (t + 1)); }
   }
   return null;
 }
-const jget = async u => { const t = await get(u); await sleep(220); try { return t ? JSON.parse(t) : null; } catch { return null; } };
+const jget = async u => { const t = await get(u); await pace(); if (!t) return null; const a = t.indexOf('{'); if (a < 0) return null; try { return JSON.parse(t.slice(a, t.lastIndexOf('}') + 1)); } catch { return null; } };
 
 async function tickerMaps() {
   const j = await jget('https://www.sec.gov/files/company_tickers.json'); if (!j) { console.log('company_tickers.json failed, last HTTP status ' + lastStatus); return null; }
@@ -72,7 +81,7 @@ async function holdings(cik, acc, T) {
   const ix = await jget(dir + 'index.json'); const items = ix && ix.directory && ix.directory.item ? ix.directory.item : [];
   const xmlF = items.filter(i => /\.xml$/i.test(i.name) && !/primary_doc/i.test(i.name)).sort((a, b) => (+b.size || 0) - (+a.size || 0))[0];
   if (!xmlF) return null;
-  const t = await get(dir + xmlF.name); await sleep(220); if (!t) return null;
+  const t = await get(dir + xmlF.name, 3, true); await pace(); if (!t) return null;
   const rows = parse13f(t).sort((a, b) => b[2] - a[2]).slice(0, KEEP);
   rows.forEach(r => { r[4] = tickerFor(T, r[1]); });
   return rows;
