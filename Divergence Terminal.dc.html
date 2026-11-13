@@ -752,7 +752,8 @@ a:hover{color:oklch(0.44 0.12 165)}
                 <span style="{{ t.statusStyle }}">{{ t.status }}</span>
               </div>
               <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--mute)">{{ t.region }}</span>
-              <span style="font-size:12px;line-height:1.45;text-wrap:pretty">{{ t.cause }}</span>
+              <sc-if value="{{ t.hasVerdict }}" hint-placeholder-val="{{ false }}"><span style="font-size:12px;line-height:1.45;font-weight:600;text-wrap:pretty">Daily scan: {{ t.verdict }}</span></sc-if>
+              <span style="font-size:12px;line-height:1.45;text-wrap:pretty;color:var(--mute)">{{ t.cause }}</span>
               <div style="display:flex;flex-direction:column;gap:5px;border-top:1px solid var(--line);padding-top:8px">
                 <sc-for list="{{ t.ev }}" as="v" hint-placeholder-count="0">
                   <div style="display:flex;flex-direction:column;gap:1px">
@@ -771,7 +772,7 @@ a:hover{color:oklch(0.44 0.12 165)}
             </div>
           </sc-for>
         </div>
-        <span style="font-size:10.5px;line-height:1.5;color:var(--faint);text-wrap:pretty">Confirmed = a current physical shortage backed by dated price, trade or company data. Emerging = forecast or weather risk not yet showing as a shortage. Evidence is reviewed by hand; the News badge and prices update live every day. Not investment advice.</span>
+        <span style="font-size:10.5px;line-height:1.5;color:var(--faint);text-wrap:pretty">Confirmed = shortage headlines in the last 14 days and the commodity price up. Emerging = one of the two is present. Early signs = headlines or price just turned up. Quiet = nothing yet. Rated by an automatic daily scan of Google News and prices; the manual notes are older and shown in grey. Stocks are listed in order of chart strength. Not investment advice.</span>
       </div>
       <div style="flex:1 1 380px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column">
         <div style="display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)">
@@ -3427,6 +3428,8 @@ class Component extends DCLogic {
     if (!this.dead && (BF || SG)) this.setState({ pubBrief: BF, pubSigs: SG });
     const EX = await get('data/exchange.json');
     if (EX && EX.rows && !this.dead) { this.exch = EX; this.setState({ exchTick: Date.now() }); }
+    const SHV = await get('data/shortages.json');
+    if (SHV && SHV.themes && !this.dead) { this.shortSrv = SHV; this.setState({ shTick: Date.now() }); }
     const RK = await get('data/ranks.json');
     if (RK && RK.rows && !this.dead) { this.ranks = RK; this.cache = {}; this.setState({ rkTick: Date.now() }); }
     const IC = await get('data/intraday.json');
@@ -5806,8 +5809,9 @@ class Component extends DCLogic {
     TABS.forEach(([id]) => { o['tab_' + id] = cur === id; });
     o.tabSeg = TABS.map(([id, label]) => ({ label, pick: () => { try { localStorage.setItem('divergence.term.tab', id); } catch (e) { /* ignore */ } this.setState({ tab: id }); try { window.scrollTo(0, 0); } catch (e) { /* ignore */ } }, style: 'padding:11px 14px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;border-bottom:2px solid ' + (cur === id ? 'var(--accent)' : 'transparent') + ';color:' + (cur === id ? 'var(--text)' : 'var(--mute)') }));
     const sf = st.shortF || 'all', segS = on => 'padding:4px 9px;border-radius:5px;font-size:11px;font-weight:600;cursor:pointer;white-space:nowrap;' + (on ? 'background:var(--text);color:var(--bg)' : 'color:var(--mute)');
-    o.shortSeg = [['all', 'All'], ['short', 'Shortages ' + THEMES.filter(t => t.status).length], ['other', 'Other themes']].map(([id, l]) => ({ label: l, pick: () => this.setState({ shortF: id }), style: segS(sf === id) }));
-    o.shortReviewed = 'Evidence reviewed ' + SHORT_REVIEWED + (Date.now() - Date.parse(SHORT_REVIEWED) > 2 * 864e5 ? ' · review due' : '');
+    const SVm = (this.shortSrv && this.shortSrv.themes) || null;
+    o.shortSeg = [['all', 'All'], ['short', 'Shortages ' + THEMES.filter(t => SVm ? !!(SVm[t.id] && SVm[t.id].status) : !!t.status).length], ['other', 'Other themes']].map(([id, l]) => ({ label: l, pick: () => this.setState({ shortF: id }), style: segS(sf === id) }));
+    o.shortReviewed = SVm ? 'Auto-scanned ' + timeAgo(Date.parse(this.shortSrv.updated) / 1000) + ' ago from news and prices · older manual notes reviewed ' + SHORT_REVIEWED : 'Evidence reviewed ' + SHORT_REVIEWED + (Date.now() - Date.parse(SHORT_REVIEWED) > 2 * 864e5 ? ' · review due, daily scan not loaded' : '');
     return o;
   }
   renderVals() {
@@ -5936,12 +5940,15 @@ class Component extends DCLogic {
     const openSym = sym => () => this.setState({ sel: sym, detail: true });
 
     const tn = st.themeNews || {}, now = Date.now() / 1000;
-    const themeOf = {}, themeHeat = {};
+    const themeOf = {}, themeHeat = {}, SVall = (this.shortSrv && this.shortSrv.themes) || {};
     const themes = THEMES.map(t => {
       const d = tn[t.id]; const hits = d ? d.items.filter(x => t.kw.test(x.title) && now - x.t < 14 * 86400) : [];
+      const sv = SVall[t.id];
       let heat = 0; hits.forEach(x => { const age = (now - x.t) / 86400; heat += (age < 2 ? 3 : age < 7 ? 2 : 1) * (POS_RE.test(x.title) ? 1.5 : 1); });
-      if (heat >= 6) t.picks.forEach(p => { if (!(themeHeat[p[0]] >= heat)) { themeOf[p[0]] = t.title; themeHeat[p[0]] = heat; } });
-      return { t, heat, lvl: heat >= 12 ? 'Hot' : heat >= 6 ? 'Building' : heat > 0 ? 'Early' : 'Quiet' };
+      if (!d && sv) heat = sv.heat;
+      const boost = sv && sv.status === 'Confirmed' ? 12 : sv && (sv.status === 'Emerging' || sv.status === 'Early signs') ? 6 : 0, eh = Math.max(heat, boost);
+      if (eh >= 6) t.picks.forEach(p => { const rk = sv && sv.picks ? sv.picks.find(z => z.sym === p[0]) : null; if (rk && rk.score <= 0 && heat < 6) return; if (!(themeHeat[p[0]] >= eh)) { themeOf[p[0]] = t.title; themeHeat[p[0]] = eh; } });
+      return { t, sv, heat, lvl: heat >= 12 ? 'Hot' : heat >= 6 ? 'Building' : heat > 0 ? 'Early' : 'Quiet' };
     }).sort((a, b) => b.heat - a.heat);
 
     const key = [st.bars, st.quotes, st.horizon, st.opts, st.grow, st.fin, st.htf, tn, st.capTick, st.f13Done, st.calTick];
@@ -6095,11 +6102,12 @@ class Component extends DCLogic {
     const lvlTone = l => l === 'Hot' ? 'var(--down)' : l === 'Building' ? 'var(--warn)' : l === 'Early' ? 'var(--accent)' : 'var(--faint)';
     const byS = {}; L.forEach(x => { byS[x.sym] = x; });
     const shortF = st.shortF || 'all';
-    const themeList = themes.filter(o => shortF === 'all' || (shortF === 'short' ? !!o.t.status : !o.t.status)).sort((a, b) => (b.t.status ? 1 : 0) - (a.t.status ? 1 : 0) || (/^Confirmed/.test(b.t.status || '') ? 1 : 0) - (/^Confirmed/.test(a.t.status || '') ? 1 : 0) || b.heat - a.heat);
-    const stTone = s => /^Confirmed/.test(s || '') ? 'var(--down)' : s ? 'var(--warn)' : 'var(--faint)';
-    const themeRows = themeList.map(o => ({ status: o.t.status || 'Theme', statusStyle: M + 'flex:none;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 7px;border-radius:4px;white-space:nowrap;color:' + stTone(o.t.status) + ';border:1px solid ' + stTone(o.t.status),
-      region: o.t.region || '', cause: o.t.cause || '', ev: (o.t.ev || []).map(([t, src]) => ({ t, src })), title: o.t.title, chain: o.t.chain, lvl: o.lvl, lvlStyle: M + 'font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;padding:2px 6px;border-radius:4px;border:1px solid ' + lvlTone(o.lvl) + ';color:' + lvlTone(o.lvl),
-      picks: o.t.picks.slice(0, 6).map(([sym, name]) => { const x = byS[sym]; return { sym, chg: x ? pct(x.ch, 1) : '', style: M + 'font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:4px;cursor:pointer;background:var(--panel2);color:' + (x ? cv(x.ch) : 'var(--text)'), open: () => { if (!ASSETS.find(a => a.sym === sym)) this.adopt({ sym, name, yh: sym, kind: /=F$/.test(sym) ? 'commodity' : 'stock' }); this.setState({ sel: sym, detail: true }); } }; }) }));
+    const effSt = o => o.sv ? o.sv.status : (o.t.status || null), stRank = s => /^Confirmed/.test(s || '') ? 0 : s === 'Emerging' ? 1 : s === 'Early signs' ? 2 : s === 'Quiet' ? 4 : s ? 3 : 5;
+    const themeList = themes.filter(o => shortF === 'all' || (shortF === 'short' ? !!effSt(o) : !effSt(o))).sort((a, b) => stRank(effSt(a)) - stRank(effSt(b)) || b.heat - a.heat);
+    const stTone = s => /^Confirmed/.test(s || '') ? 'var(--down)' : s === 'Quiet' || !s ? 'var(--faint)' : 'var(--warn)';
+    const themeRows = themeList.map(o => ({ status: o.sv && o.sv.status ? o.sv.status + ' · ' + o.sv.since : (o.t.status || 'Theme'), verdict: o.sv && o.sv.status ? o.sv.why + (o.sv.prev && o.sv.prev !== o.sv.status ? ' (was ' + o.sv.prev + ')' : '') + (o.sv.price && o.sv.price.ch3m != null ? ' · price proxy ' + o.sv.price.syms.join('/') + ' ' + (o.sv.price.ch3m > 0 ? '+' : '') + o.sv.price.ch3m + '% 3m' : '') : '', hasVerdict: !!(o.sv && o.sv.status), statusStyle: M + 'flex:none;font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:3px 7px;border-radius:4px;white-space:nowrap;color:' + stTone(effSt(o)) + ';border:1px solid ' + stTone(effSt(o)),
+      region: o.t.region || '', cause: o.t.cause ? (o.sv ? 'Manual note (reviewed ' + SHORT_REVIEWED + '): ' : '') + o.t.cause : '', ev: ((o.sv && o.sv.ev) || []).map(x => ({ t: x.title, src: (x.src || 'News') + ' · ' + timeAgo(x.t) + ' ago · live scan' })).concat((o.t.ev || []).map(([t, src]) => ({ t, src: src + (o.sv ? ' (manual)' : '') }))), title: o.t.title, chain: o.t.chain, lvl: o.lvl, lvlStyle: M + 'font-size:9px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;white-space:nowrap;padding:2px 6px;border-radius:4px;border:1px solid ' + lvlTone(o.lvl) + ';color:' + lvlTone(o.lvl),
+      picks: o.t.picks.slice().sort((a, b) => { const r = z => { const k = o.sv && o.sv.picks ? o.sv.picks.findIndex(q => q.sym === z[0]) : -1; return k < 0 ? 99 : k; }; return r(a) - r(b); }).slice(0, 6).map(([sym, name]) => { const x = byS[sym]; return { sym, chg: x ? pct(x.ch, 1) : '', style: M + 'font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:4px;cursor:pointer;background:var(--panel2);color:' + (x ? cv(x.ch) : 'var(--text)'), open: () => { if (!ASSETS.find(a => a.sym === sym)) this.adopt({ sym, name, yh: sym, kind: /=F$/.test(sym) ? 'commodity' : 'stock' }); this.setState({ sel: sym, detail: true }); } }; }) }));
     const tLoaded = THEMES.filter(t => tn[t.id]).length;
 
     let qRows = [];
