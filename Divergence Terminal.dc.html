@@ -2456,6 +2456,7 @@ function bbdc(b, RS, P) {
 }
 const CAL_REGS = ['bullCalm', 'bullVol', 'bearCalm', 'bearVol'];
 const CAL_REG_LBL = { bullCalm: 'Uptrend · calm', bullVol: 'Uptrend · volatile', bearCalm: 'Downtrend · calm', bearVol: 'Downtrend · volatile' };
+const DIP_IDS = { oversold: 1, bbLow: 1, confirmOS: 1, bbdcRev: 1, rev1m: 1, deepBelow: 1, dn3: 1 };
 const STRAT_OF = { trendUp: 'Trend following', trendDn: 'Trend following', oversold: 'Buy the dip', bbLow: 'Buy the dip', confirmOS: 'Confirmed bounce', bbdcRev: 'Reversal', macdUp: 'Momentum', macdDn: 'Momentum', volUp: 'Breakout', volDn: 'Breakdown', newHigh: 'Breakout', overbought: 'Fade strength', bbHigh: 'Fade strength', news: 'News / themes', nearHigh: 'Breakout', mom12: 'Momentum', momLose: 'Momentum', rev1m: 'Reversal', rev1mUp: 'Fade strength', golden: 'Trend following', death: 'Trend following', donUp: 'Breakout', donDn: 'Breakdown', pullback: 'Buy the dip', lowVol: 'Low volatility', stretched: 'Fade strength', deepBelow: 'Buy the dip', dn3: 'Reversal' };
 function regPts(cal, id) { if (!cal || !cal.feats || !cal.feats[id]) return 0; const R = cal.byReg && cal.reg ? cal.byReg[cal.reg][id] : null; if (R && R.n >= 30) return R.status === 'active' ? R.pts : 0; return cal.feats[id].pts * 0.5; }
 const CAL_KEY = 'divergence.cal.v1', NEWSLOG_KEY = 'divergence.newslog.v1';
@@ -3426,6 +3427,8 @@ class Component extends DCLogic {
     if (!this.dead && (BF || SG)) this.setState({ pubBrief: BF, pubSigs: SG });
     const EX = await get('data/exchange.json');
     if (EX && EX.rows && !this.dead) { this.exch = EX; this.setState({ exchTick: Date.now() }); }
+    const RK = await get('data/ranks.json');
+    if (RK && RK.rows && !this.dead) { this.ranks = RK; this.cache = {}; this.setState({ rkTick: Date.now() }); }
     const IC = await get('data/intraday.json');
     if (IC && IC.iv && !this.dead) { this.intraCal = IC; this.setState({ icTick: Date.now() }); }
     const EA = await get('data/earnings.json');
@@ -4222,12 +4225,17 @@ class Component extends DCLogic {
     return { bars, px, e10, e50, e100, e200, r, m, i, div, vol, crossAgo, gAgo, hAgo };
   }
 
+  peerOf(sym) {
+    const R = this.ranks; if (!R) return null; const a = ASSETS.find(x => x.sym === sym);
+    const rk = a && a.bin ? (R.coins || {})[a.sym] : (R.rows || {})[sym];
+    return rk && rk.ok && rk.pct != null ? rk : null;
+  }
   signal(sym, horizon) {
     const b = this.state.bars[sym]; if (!b) return null;
     const q = this.state.quotes[sym];
     const oo = this.state.opts[sym];
     const lvl = macroRead(this.state.quotes).level;
-    const key = sym + '|' + horizon + '|' + b.length + '|' + (q ? q.p : b[b.length - 1].c) + '|' + (oo ? oo.at : 0) + '|' + lvl;
+    const key = sym + '|' + horizon + '|' + b.length + '|' + (q ? q.p : b[b.length - 1].c) + '|' + (oo ? oo.at : 0) + '|' + lvl + '|' + (this.ranks ? this.ranks.updated : 0);
     this.cache = this.cache || {};
     if (this.cache[key]) return this.cache[key];
     let out = this.computeSignal(sym, horizon);
@@ -4239,6 +4247,14 @@ class Component extends DCLogic {
     if (out && out.action === 'BUY' && this.cal && this.cal.reg) {
       const b = this.state.bars[sym], R = b ? rsi(b.map(x => x.c), 14) : null, rr = R ? R[R.length - 1] : null;
       if (rr != null && rr < 38 && regPts(this.cal, 'oversold') + regPts(this.cal, 'bbLow') < -0.5) out = Object.assign({}, out, { action: 'HOLD', gate: 'Buy blocked: buying dips has lost money in the current market (' + CAL_REG_LBL[this.cal.reg] + ')', reasons: [{ t: 'Dip-buying off in this market' }].concat(out.reasons || []).slice(0, 5) });
+    }
+    if (out && (out.action === 'BUY' || out.action === 'SELL')) {
+      const rk = this.peerOf(sym), cl0 = b.map(x => x.c), n0 = cl0.length, rr0 = n0 > 30 ? rsi(cl0, 14)[n0 - 1] : null, r1m = n0 > 22 ? cl0[n0 - 1] / cl0[n0 - 22] - 1 : 0;
+      const hold = (head, body) => { out = Object.assign({}, out, { action: 'HOLD', gate: head + ': ' + body, reasons: [{ t: head }].concat(out.reasons || []).slice(0, 5), why: [{ head, body: body + '.', dot: FLAT }].concat(out.why || []) }); };
+      if (out.action === 'BUY' && ((rr0 != null && rr0 < 30) || r1m <= -0.15)) hold('Buy held back', 'oversold dips have no edge in testing, so a falling stock is a caution flag, not a buy. Waits for the trend to turn');
+      else if (out.action === 'BUY' && rk && rk.pct < 50) hold('Buy held back', 'ranks only ' + rk.pct + '/100 against similar-volatility peers on trend and strength');
+      else if (out.action === 'SELL' && rk && rk.pct > 50) hold('Sell held back', 'ranks ' + rk.pct + '/100 against similar-volatility peers, so it is not among the weak ones');
+      else if (rk) { out = Object.assign({}, out, { peer: rk, why: [{ head: 'Peer rank ' + rk.pct + '/100', body: 'Ranked against ' + (rk.g === 'coin' ? 'other coins' : rk.g + '-volatility stocks') + ' on the trend signals that held up in both halves of the history.', dot: rk.pct >= 60 ? UP : rk.pct <= 40 ? DOWN : FLAT }].concat(out.why || []) }); }
     }
     if (out && (out.action === 'BUY' || out.action === 'SELL')) {
       const bt = this.btC && this.btC[sym], ev = bt && bt[horizon] ? bt[horizon].filter(e => e.done) : [];
@@ -5469,12 +5485,13 @@ class Component extends DCLogic {
         const C = rrOn ? C0.filter(r => !(r.side && r.rr != null && r.rr < 2)) : C0;
         const PF = {}; Object.keys(this.btI || {}).forEach(k => { const iv = k.slice(0, k.indexOf('4h') === 0 ? 2 : 3); (this.btI[k].trades || []).forEach(t => { if (t.res === 'open') return; const g = PF[iv + '|' + t.side] || (PF[iv + '|' + t.side] = { n: 0, w: 0, r: 0 }); g.n++; if (t.res === 'target') g.w++; g.r += t.r; }); });
         const proven = (iv, side) => { const g = PF[iv + '|' + side]; return !!g && g.n >= 30 && g.r / g.n > 0.05 && g.w / g.n >= 0.45; };
-        const fails = { warn: 0, rr: 0, earn: 0, opt: 0, flow: 0, proof: 0 }, best = [];
+        const fails = { warn: 0, rr: 0, earn: 0, opt: 0, flow: 0, proof: 0, peer: 0 }, best = [];
         C0.filter(r => r.kind !== 'crypto' && r.side).forEach(r => {
           if (r.quality !== 'clean') { fails.warn++; return; }
           if (r.rr == null || r.rr < 2) { fails.rr++; return; }
           if (r.earnBefore) { fails.earn++; return; }
           if (!r.op || !r.ct) { fails.opt++; return; }
+          { const pk = this.peerOf(r.sym); if (!pk || (r.side === 'CALL' ? pk.pct < 60 : pk.pct > 40)) { fails.peer++; return; } }
           if (!['15m', '4h'].every(iv => proven(iv, r.side))) { fails.proof++; return; }
           const fd = r.op.dir || 0; if (r.side === 'CALL' ? fd < -0.3 : fd > 0.3) { fails.flow++; return; }
           const agree = r.side === 'CALL' ? r.bull : r.bear, fAg = r.side === 'CALL' ? fd > 0.3 : fd < -0.3;
@@ -5510,7 +5527,7 @@ class Component extends DCLogic {
             onSave: () => { if (saved) return; const nx = (st.journal || []).concat([Object.assign({ id: r.sym + r.side + Date.now(), at: Date.now(), status: 'open' }, tradeOf(r))]); lsSet('divergence.journal.v1', nx); this.setState({ journal: nx }); },
             open: () => this.setState({ sel: r.sym, detail: true }) };
         });
-        const fl = [[fails.warn, 'with warnings or timeframes still loading'], [fails.rr, 'below 1:2 risk/reward'], [fails.earn, 'with earnings before expiry'], [fails.opt, 'waiting for options data'], [fails.flow, 'with options flow against the trade'], [fails.proof, 'held back because the 15-min or 4-hour ' + 'backtest has not proven an edge for this side (needs 30+ trades, positive average R, win rate 45%+)']].filter(x => x[0] > 0).map(x => x[0] + ' ' + x[1]).join(' · ');
+        const fl = [[fails.warn, 'with warnings or timeframes still loading'], [fails.rr, 'below 1:2 risk/reward'], [fails.earn, 'with earnings before expiry'], [fails.opt, 'waiting for options data'], [fails.flow, 'with options flow against the trade'], [fails.peer, 'whose peer rank does not support the trade (CALL needs the top 40%, PUT the bottom 40%)'], [fails.proof, 'held back because the 15-min or 4-hour ' + 'backtest has not proven an edge for this side (needs 30+ trades, positive average R, win rate 45%+)']].filter(x => x[0] > 0).map(x => x[0] + ' ' + x[1]).join(' · ');
         const best5Note = best.length >= 5 ? 'Ranked by timeframe agreement, risk/reward, options flow and IV. Built for 1–5 day holds with expiries 1–3 weeks out.' : (best.length ? 'Only ' + best.length + ' trade' + (best.length > 1 ? 's pass' : ' passes') + ' every rule right now.' : 'No trade passes every rule right now.') + (fl ? ' Not shown: ' + fl + '.' : '');
         const icN = iv => { const F = this.intraCal && this.intraCal.iv[iv] && this.intraCal.iv[iv].feats; return F ? Object.values(F).filter(x => x.status === 'edge').length : null; };
         const icTxt = this.intraCal ? ' Nightly test on ' + this.intraCal.symbols + ' stocks and coins: ' + icN('15m') + ' of ' + CAL_FEATS.length + ' signals show a repeatable edge on 15-min bars, ' + icN('4h') + ' on 4-hour bars. Few or none means short-term signals are mostly noise.' : '';
@@ -5832,8 +5849,10 @@ class Component extends DCLogic {
       f.news = x.tags.some(t => t[1] === 'acc');
       let add = 0; const used = [];
       const CB = this.cal && this.cal.byReg && this.cal.reg ? this.cal.byReg[this.cal.reg] : null;
-      if (C) for (const id in f) { if (!f[id] || !C[id]) continue; const P = regPts(this.cal, id); if (!P) continue; add += P; used.push(C[id].label.split(' (')[0] + ' ' + (P > 0 ? '+' : '') + P.toFixed(1)); }
+      if (C) for (const id in f) { if (!f[id] || !C[id]) continue; let P = regPts(this.cal, id); if (P > 0 && DIP_IDS[id]) P = 0; if (!P) continue; add += P; used.push(C[id].label.split(' (')[0] + ' ' + (P > 0 ? '+' : '') + P.toFixed(1)); }
       if (false) for (const id in f) if (f[id] && C[id] && C[id].pts) { add += C[id].pts; used.push(C[id].label.split(' (')[0] + ' ' + (C[id].pts > 0 ? '+' : '') + C[id].pts.toFixed(1)); }
+      const rkp = this.peerOf(x.sym); if (rkp) { add += (rkp.pct - 50) * 0.2; used.push('Peer rank ' + rkp.pct + ' ' + ((rkp.pct - 50) * 0.2 >= 0 ? '+' : '') + ((rkp.pct - 50) * 0.2).toFixed(1)); }
+      if (f.oversold || f.bbLow || x.r != null && x.r < 30) x.tags.push(['Oversold: caution, not a buy', 'acc']);
       x.calAdd = Math.round(add); x.calWhy = used;
       let c = x.conv + add;
       if (x.sig && x.sig.unreliable != null) { c *= 0.5; x.tags.push(['Unreliable here (' + x.sig.unreliable + '% past)', 'acc']); }
