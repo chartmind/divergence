@@ -2985,7 +2985,7 @@ class Component extends DCLogic {
   mount0() {
     this.queue = this.queue || [];
     setTimeout(() => { try { this.load13f(); } catch (e) { /* optional */ } }, 1500);
-    try { (this.state.pf.list || []).forEach(p => Object.keys(p.pos || {}).forEach(s => { const m = p.pos[s]; if (!ASSETS.find(a => a.sym === s)) ASSETS = [{ sym: s, name: m.name || s, yh: m.yh || s, kind: m.kind || 'stock' }].concat(ASSETS); })); } catch (e) { /* bad saved portfolio */ }
+    try { (this.state.pf.list || []).forEach(p => Object.keys(p.pos || {}).forEach(s => { const m = p.pos[s]; if (!ASSETS.find(a => a.sym === s)) ASSETS = [Object.assign({ sym: s, name: m.name || s, yh: m.yh || s, kind: m.kind || 'stock' }, m.bin ? { bin: m.bin } : m.kind === 'crypto' && /\/USDT/.test(m.name || '') ? { bin: s.replace(/-USD$/, '') + 'USDT' } : {})].concat(ASSETS); })); } catch (e) { /* bad saved portfolio */ }
     const safe = (n, f) => { try { f(); } catch (e) { console.warn('mount ' + n, e && e.message); } };
     const startGrow = () => { if (this.growUniStarted || this.dead) return; this.growUniStarted = true; Promise.resolve().then(() => this.loadGrowUniverse()).then(() => console.warn('growth universe', (this.state.growUni || []).length, Object.keys(this.state.grow || {}).length, (this.sec && this.sec.rows) ? Object.keys(this.sec.rows).length : 'norows')).catch(e => { this.growUniStarted = false; console.warn('growth universe failed', e && e.message); }); };
     this.dead = false; this.growUniStarted = false;
@@ -3157,9 +3157,9 @@ class Component extends DCLogic {
       crypto = j.filter(t => t.symbol.endsWith('USDT') && !LEVERAGED.test(t.symbol.slice(0, -4)) && !STABLE.test(t.symbol.slice(0, -4)) && !(/^(USD|EUR)|USD$/.test(t.symbol.slice(0, -4)) && +t.lowPrice > 0 && +t.highPrice / +t.lowPrice < 1.01) && +t.quoteVolume > 3e7)
         .sort((a, b) => +b.quoteVolume - +a.quoteVolume).slice(0, 80)
         .map(t => {
-          const sym = t.symbol.slice(0, -4);
+          const base = t.symbol.slice(0, -4), sym = this.cSym(base);
           quotes[sym] = { p: +t.lastPrice, ch: +t.priceChangePercent, at: Date.now() };
-          return { sym, name: sym + '/USDT · Binance', bin: t.symbol, kind: 'crypto', vol: +t.quoteVolume };
+          return { sym, name: base + '/USDT · Binance', bin: t.symbol, kind: 'crypto', vol: +t.quoteVolume };
         });
       src.crypto = crypto.length + ' pairs live';
       this.setState(s => ({ quotes: Object.assign({}, s.quotes, quotes) }));
@@ -3435,6 +3435,8 @@ class Component extends DCLogic {
     if (EA && EA.q && !this.dead) { this.earn = EA; this.setState({ earnTick: Date.now() }); }
     const B = await get('data/bars.json');
     if (B && B.bars && !this.dead) {
+      this.pubSyms = new Set(Object.keys(B.bars).filter(k => !/-USD$|\.NS$|\.BO$|^\^/.test(k)));
+      try { if (this.fixCryptoPos()) { const p = JSON.parse(JSON.stringify(this.state.pf)); pfStore(p); this.setState({ pf: p }); } } catch (e) { /* ignore */ }
       this.setState(s0 => {
         const bars = Object.assign({}, s0.bars); let n = 0;
         Object.keys(B.bars).forEach(sym => {
@@ -3649,7 +3651,7 @@ class Component extends DCLogic {
     const cHead = cols.map(([k, label, al]) => ({ label: label + (srt.k === k ? (srt.d < 0 ? ' ↓' : ' ↑') : ''), pick: () => { if (!G[k]) return; this.setState(s => ({ cSort: { k, d: s.cSort && s.cSort.k === k ? -s.cSort.d : (k === 'rank' || k === 'fdv' || k === 'sym' || k === 'name' ? 1 : -1) } })); }, style: M + 'font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:8px 0;white-space:nowrap;cursor:pointer;text-align:' + al + ';' + (k === 'tags' || k === 'trend' ? 'padding-left:8px;' : '') + 'color:' + (srt.k === k ? 'var(--text)' : 'var(--mute)') }));
     const open = x => () => {
       let a = ASSETS.find(z => z.sym === x.sym && z.kind === 'crypto'); let sym = x.sym;
-      if (!a) { if (ASSETS.find(z => z.sym === x.sym)) sym = x.sym + '-USD'; a = x.bin ? { sym, name: x.name + ' · ' + x.sym + '/USDT', bin: x.sym + 'USDT', kind: 'crypto' } : { sym, name: x.name, yh: x.sym + '-USD', kind: 'crypto' }; this.adopt(a); }
+      if (!a) { if (ASSETS.find(z => z.sym === x.sym)) sym = x.sym + '-USD'; a = x.bin ? { sym, name: x.name + ' · ' + x.sym + '/USDT', bin: x.bin || x.sym + 'USDT', kind: 'crypto' } : { sym, name: x.name, yh: x.sym + '-USD', kind: 'crypto' }; this.adopt(a); }
       this.setState(s => ({ sel: a.sym, detail: true, quotes: x.px ? Object.assign({}, s.quotes, { [a.sym]: Object.assign({}, s.quotes[a.sym], { p: x.px, ch: x.c1, at: Date.now() }) }) : s.quotes }));
     };
     const cRows = L.map(x => ({
@@ -3682,6 +3684,15 @@ class Component extends DCLogic {
     this.cValsCache = { k: key, v };
     return Object.assign(base, v);
   }
+  cSym(base) { return ASSETS.some(z => z.sym === base && z.kind !== 'crypto') || (this.pubSyms && this.pubSyms.has(base)) ? base + '-USD' : base; }
+  fixCryptoPos() {
+    // A coin that shares its ticker with a US stock (e.g. ARB) must not be priced from the stock.
+    const moves = [];
+    (this.state.pf.list || []).forEach(p => Object.keys(p.pos || {}).forEach(s => { const m = p.pos[s]; if (m.kind === 'crypto' && !/-USD$/.test(s) && /\/USDT/.test(m.name || '') && this.cSym(s) !== s) moves.push([p, s]); }));
+    if (!moves.length) return false;
+    moves.forEach(([p, s]) => { const m = p.pos[s], ns = s + '-USD'; m.bin = m.bin || s + 'USDT'; m.yh = ns; p.pos[ns] = m; delete p.pos[s]; this.adopt({ sym: ns, name: m.name, bin: m.bin, kind: 'crypto' }); });
+    return true;
+  }
   adopt(asset) {
     if (!ASSETS.find(a => a.sym === asset.sym)) ASSETS = [asset].concat(ASSETS);
     if (!this.state.bars[asset.sym]) { this.queue.unshift(asset.sym); this.startWorkers(); }
@@ -3708,7 +3719,7 @@ class Component extends DCLogic {
 
       const bin = (this.tickerCache || []).filter(t => t.symbol.slice(0, -4).indexOf(up) === 0)
         .sort((a, b) => +b.quoteVolume - +a.quoteVolume).slice(0, 8)
-        .map(t => ({ sym: t.symbol.slice(0, -4), name: t.symbol.slice(0, -4) + '/USDT · Binance', bin: t.symbol, kind: 'crypto' }));
+        .map(t => ({ sym: this.cSym(t.symbol.slice(0, -4)), name: t.symbol.slice(0, -4) + '/USDT · Binance', bin: t.symbol, kind: 'crypto' }));
       merge(bin);
 
       this.paused = true;
@@ -5177,7 +5188,7 @@ class Component extends DCLogic {
       const c = p.list.find(x => x.id === cur.id), pos = c.pos[sym];
       if (side === 'BUY') {
         if (pos) { pos.cost = (pos.cost * pos.qty + px * qty) / (pos.qty + qty); pos.qty += qty; }
-        else c.pos[sym] = { qty, cost: px, name: (a.name || sym).replace(' · small/mid cap', ''), yh: a.yh || sym, kind: a.kind || 'stock', at: Date.now() };
+        else c.pos[sym] = { qty, cost: px, name: (a.name || sym).replace(' · small/mid cap', ''), yh: a.yh || sym, bin: a.bin, kind: a.kind || 'stock', at: Date.now() };
         if (c.paper) c.cash -= qty * px;
       } else {
         c.realized = (c.realized || 0) + (px - pos.cost) * qty; pos.qty -= qty;
