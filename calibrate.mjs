@@ -178,8 +178,13 @@ async function yahooBars(sym, range = '2y') {
   }
   return null;
 }
+// api.binance.com returns 451 (blocked) from US cloud runners; data-api.binance.vision serves the same public market data.
+async function bget(path) {
+  for (const h of ['https://data-api.binance.vision', 'https://api.binance.com']) { try { return await getJSON(h + path, 1); } catch { /* next host */ } }
+  return null;
+}
 async function binanceBars(sym) {
-  const k = await getJSON('https://api.binance.com/api/v3/klines?symbol=' + sym.replace('-USD', 'USDT') + '&interval=1d&limit=730');
+  const k = await bget('/api/v3/klines?symbol=' + sym.replace('-USD', 'USDT') + '&interval=1d&limit=730');
   return Array.isArray(k) ? k.map(x => ({ t: x[0], o: +x[1], h: +x[2], l: +x[3], c: +x[4], v: +x[5] })) : null;
 }
 
@@ -403,7 +408,7 @@ async function yahooIntra(sym, interval, range) {
   return null;
 }
 async function binanceIntra(sym, interval) {
-  const k = await getJSON('https://api.binance.com/api/v3/klines?symbol=' + sym.replace('-USD', 'USDT') + '&interval=' + interval + '&limit=1000');
+  const k = await bget('/api/v3/klines?symbol=' + sym.replace('-USD', 'USDT') + '&interval=' + interval + '&limit=1000');
   return Array.isArray(k) ? k.map(x => ({ t: x[0], h: +x[2], l: +x[3], c: +x[4], v: +x[5] })) : null;
 }
 function to4h(b) { const o = []; for (let i = 0; i + 3 < b.length; i += 4) { const g = b.slice(i, i + 4); o.push({ t: g[3].t, h: Math.max(...g.map(x => x.h)), l: Math.min(...g.map(x => x.l)), c: g[3].c, v: g.reduce((a, x) => a + x.v, 0) }); } return o; }
@@ -528,15 +533,20 @@ async function rankStage(now, bars) {
   // crypto: top coins by 24h volume on Binance
   let coins = {}, cStats = null, cRows = {};
   try {
-    const tk = await getJSON('https://api.binance.com/api/v3/ticker/24hr');
-    const top = (tk || []).filter(x => /USDT$/.test(x.symbol) && !/(UP|DOWN|BULL|BEAR)USDT$/.test(x.symbol) && !/^(USDC|FDUSD|TUSD|BUSD|USDP|DAI|EUR|AEUR|USD1)/.test(x.symbol)).sort((a, b) => +b.quoteVolume - +a.quoteVolume).slice(0, 55).map(x => x.symbol);
-    for (const sy of top) { const k = await getJSON('https://api.binance.com/api/v3/klines?symbol=' + sy + '&interval=1d&limit=1000').catch(() => null); if (Array.isArray(k) && k.length > 400) coins[sy.slice(0, -4)] = k.map(x => ({ t: +x[0], o: +x[1], h: +x[2], l: +x[3], c: +x[4], v: +x[5] })); await sleep(120); }
-    if (coins.BTC) { cStats = rankStudy(coins, coins.BTC, false); cRows = rankNow(coins, cStats.groups, false); }
+    const tk = await bget('/api/v3/ticker/24hr');
+    if (!Array.isArray(tk) || !tk.length) {
+      for (const c of ['BTC', 'ETH', 'BNB', 'XRP', 'SOL', 'DOGE', 'ADA', 'TRX', 'AVAX', 'LINK', 'DOT', 'LTC', 'BCH', 'XLM', 'ATOM', 'UNI', 'ETC', 'NEAR', 'AAVE', 'FIL']) { const b = await yahooBars(c + '-USD', '5y'); if (b && b.length > 400) coins[c] = b; await sleep(250); }
+      if (coins.BTC) { cStats = rankStudy(coins, coins.BTC, false); cRows = rankNow(coins, cStats.groups, false); }
+    }
+    const top = (Array.isArray(tk) && tk.length ? tk : []).filter(x => /USDT$/.test(x.symbol) && !/(UP|DOWN|BULL|BEAR)USDT$/.test(x.symbol) && !/^(USDC|FDUSD|TUSD|BUSD|USDP|DAI|EUR|AEUR|USD1)/.test(x.symbol)).sort((a, b) => +b.quoteVolume - +a.quoteVolume).slice(0, 55).map(x => x.symbol);
+    if (top.length) for (const sy of top) { const k = await bget('/api/v3/klines?symbol=' + sy + '&interval=1d&limit=1000'); if (Array.isArray(k) && k.length > 400) coins[sy.slice(0, -4)] = k.map(x => ({ t: +x[0], o: +x[1], h: +x[2], l: +x[3], c: +x[4], v: +x[5] })); await sleep(120); }
+    if (top.length && coins.BTC) { cStats = rankStudy(coins, coins.BTC, false); cRows = rankNow(coins, cStats.groups, false); }
   } catch (e) { console.log('rank crypto failed:', e && e.message); }
   const res = { updated: now, study: { stocks: stStats.nSyms, coins: cStats ? cStats.nSyms : 0 }, groups: Object.assign({}, stStats.groups, cStats ? cStats.groups : {}), rows, coins: cRows };
   RANKS = res;
   await writeFile(new URL('ranks.json', OUT), JSON.stringify(res));
   const ed = Object.entries(res.groups).map(([g, v]) => g + ':' + Object.values(v.trend).filter(x => x.sign).length + '/' + RK_TREND.length).join(' ');
+  for (const g in res.groups) console.log('  ranks ' + g + ': ' + RK_TREND.concat(RK_REV).map(f => { const x = res.groups[g][RK_TREND.includes(f) ? 'trend' : 'rev'][f]; return f + ' ' + (x.ic != null ? x.ic + ' t' + x.t + ' ' : '') + x.status; }).join(' | '));
   console.log('ranks: study ' + res.study.stocks + ' stocks, ' + res.study.coins + ' coins · confirmed trend signals ' + ed + ' · ranked ' + Object.keys(rows).length + ' stocks, ' + Object.keys(cRows).length + ' coins');
 }
 function bars_ex(bars) { const o = {}; for (const s in bars) if (!/-USD$|\.NS$|\.BO$|^\^/.test(s)) o[s] = bars[s]; return o; }
