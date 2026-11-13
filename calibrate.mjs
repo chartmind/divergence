@@ -166,10 +166,10 @@ async function getText(url) {
 }
 
 // Yahoo chart endpoint: full OHLCV, one symbol per call. Tries query1, then query2.
-async function yahooBars(sym) {
+async function yahooBars(sym, range = '2y') {
   for (const host of ['query1', 'query2']) {
     try {
-      const j = await getJSON('https://' + host + '.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(sym) + '?range=2y&interval=1d&includePrePost=false', 3);
+      const j = await getJSON('https://' + host + '.finance.yahoo.com/v8/finance/chart/' + encodeURIComponent(sym) + '?range=' + range + '&interval=1d&includePrePost=false', 3);
       const R = j && j.chart && j.chart.result && j.chart.result[0]; if (!R || !R.timestamp) continue;
       const q = R.indicators.quote[0], out = [];
       R.timestamp.forEach((t, i) => { if (q.close[i] == null) return; out.push({ t: t * 1000, o: q.open[i], h: q.high[i], l: q.low[i], c: q.close[i], v: q.volume[i] || 0 }); });
@@ -323,7 +323,14 @@ async function earningsStage(now, symSet) {
 // Signals are computed here with the same rules as the Telegram bot and published as one compact file, so the app does no heavy work.
 const EXCH_MAX = 2500, EXCH_BUDGET_MS = 16 * 60 * 1000;
 function regPts(cal, id) { if (!cal || !cal.feats || !cal.feats[id]) return 0; const R = cal.byReg && cal.reg ? cal.byReg[cal.reg][id] : null; if (R && R.n >= 30) return R.status === 'active' ? R.pts : 0; return cal.feats[id].pts * 0.5; }
-function signalOf(b, cal) {
+let RANKS = null; // set by rankStage: { rows, coins }
+function peerGate(a, rk, rsiV, ret1m) {
+  if (a === 'BUY' && (rsiV < 30 || ret1m <= -0.15)) return 'HOLD';
+  if (a === 'BUY' && rk && rk.ok && rk.pct != null && rk.pct < 50) return 'HOLD';
+  if (a === 'SELL' && rk && rk.ok && rk.pct != null && rk.pct > 50) return 'HOLD';
+  return a;
+}
+function signalOf(b, cal, sym) {
   if (!b || b.length < 220) return null;
   const cl = b.map(x => x.c), hi = b.map(x => x.h != null ? x.h : x.c), lo = b.map(x => x.l != null ? x.l : x.c), v = b.map(x => x.v || 0);
   const k = cl.length - 1, p = cl[k], E10 = ema(cl, 10), E50 = ema(cl, 50), E200 = ema(cl, 200), R = rsi(cl, 14), H = macd(cl).hist;
@@ -334,6 +341,7 @@ function signalOf(b, cal) {
   let a = s >= 3 ? 'BUY' : s <= -3 ? 'SELL' : 'HOLD';
   if (a === 'BUY' && down && p < E50[k]) a = 'HOLD';
   if (a === 'SELL' && R[k] < 32 && p < lo52 * 1.06) a = 'HOLD';
+  a = peerGate(a, RANKS && RANKS.rows ? RANKS.rows[sym] : null, R[k], p / cl[k - 21] - 1);
   const trend = p > E10[k] && E10[k] > E50[k] && E50[k] > E200[k] ? 'Strong up' : p > E50[k] && E50[k] > E200[k] ? 'Up' : p < E10[k] && E10[k] < E50[k] && E50[k] < E200[k] ? 'Strong down' : p < E50[k] && E50[k] < E200[k] ? 'Down' : 'Mixed';
   return { a, s: Math.round(s * 10) / 10, r: Math.round(R[k]), trend };
 }
@@ -364,7 +372,7 @@ async function exchangeStage(now, cal) {
       if (Date.now() - t0 > EXCH_BUDGET_MS) return;
       const u = uni[next++];
       try {
-        const b = await yahooBars(u.s), g = b && signalOf(b, cal);
+        const b = await yahooBars(u.s), g = b && signalOf(b, cal, u.s);
         if (g) {
           const n = b.length, cl = b.map(x => x.c), p = cl[n - 1], tail = cl.slice(-252), hi = Math.max(...tail), lo = Math.min(...tail);
           const dv = b.slice(-50).reduce((a, x) => a + x.c * x.v, 0) / 50;
@@ -448,6 +456,90 @@ async function intradayStage(now, bars) {
   const cnt = iv => Object.values(res.iv[iv].feats).filter(f => f.status === 'edge').length;
   console.log('intraday: ' + ok + ' symbols · 15m edges ' + cnt('15m') + ' · 4h edges ' + cnt('4h') + ' of ' + CAL_FEATS.length);
 }
+
+// ---------- peer-rank study: which signals rank winners within similar stocks, and today's peer ranks ----------
+const RK_TREND = ['mom6_1', 'mom12_1', 'trend200', 'near52h'], RK_REV = ['rev1m', 'rsiLo'];
+function rkRank(a) { const n = a.length, ix = a.map((v, i) => [v, i]).sort((x, y) => x[0] - y[0]), r = new Array(n); let i = 0; while (i < n) { let j = i; while (j + 1 < n && ix[j + 1][0] === ix[i][0]) j++; const m = (i + j) / 2; for (let k = i; k <= j; k++) r[ix[k][1]] = m; i = j + 1; } return r; }
+function rkSpearman(x, y) { const a = rkRank(x), b = rkRank(y), n = a.length; let ma = 0, mb = 0; for (let i = 0; i < n; i++) { ma += a[i]; mb += b[i]; } ma /= n; mb /= n; let sa = 0, sb = 0, sab = 0; for (let i = 0; i < n; i++) { sa += (a[i] - ma) ** 2; sb += (b[i] - mb) ** 2; sab += (a[i] - ma) * (b[i] - mb); } return sa && sb ? sab / Math.sqrt(sa * sb) : null; }
+function rkFactors(b) {
+  const n = b.length, cl = b.map(x => x.c), E200 = ema(cl, 200), R = rsi(cl, 14), F = { mom6_1: [], mom12_1: [], trend200: [], near52h: [], rev1m: [], rsiLo: [], vol60: [] };
+  for (let i = 0; i < n; i++) {
+    F.mom6_1.push(i >= 126 ? cl[i - 21] / cl[i - 126] - 1 : NaN);
+    F.mom12_1.push(i >= 252 ? cl[i - 21] / cl[i - 252] - 1 : NaN);
+    F.trend200.push(i >= 200 ? cl[i] / E200[i] - 1 : NaN);
+    let mx = -Infinity; if (i >= 251) for (let j = i - 251; j <= i; j++) mx = Math.max(mx, cl[j]); F.near52h.push(i >= 251 ? cl[i] / mx : NaN);
+    F.rev1m.push(i >= 21 ? -(cl[i] / cl[i - 21] - 1) : NaN);
+    F.rsiLo.push(R[i] == null ? NaN : -R[i]);
+    let s1 = 0, s2 = 0; if (i >= 60) for (let j = i - 59; j <= i; j++) { const r = Math.log(cl[j] / cl[j - 1]); s1 += r; s2 += r * r; }
+    F.vol60.push(i >= 60 ? Math.sqrt(Math.max(0, s2 / 60 - (s1 / 60) ** 2)) * Math.sqrt(252) : NaN);
+  }
+  return { F, cl, dk: b.map(x => dayKey(x.t)), R };
+}
+// S: {sym: bars}, bench: bars. grouped=true splits by volatility tercile each date; false = one group ("coin").
+function rankStudy(S, bench, grouped, H = 20) {
+  const P = {}; for (const s in S) { const b = S[s]; if (!b || b.length < 300 || b.some(x => !isFinite(x.c) || x.c <= 0)) continue; const r = rkFactors(b), m = {}; r.dk.forEach((d, i) => { if (d != null) m[d] = i; }); P[s] = Object.assign(r, { m }); }
+  const bd = bench.map(x => dayKey(x.t)), bc = {}; bench.forEach((x, i) => { if (bd[i] != null) bc[bd[i]] = x.c; });
+  const names = Object.keys(P), ALL = RK_TREND.concat(RK_REV), gn = grouped ? ['low', 'mid', 'high'] : ['coin'];
+  const IC = {}; gn.forEach(g => { IC[g] = {}; ALL.forEach(f => { IC[g][f] = []; }); });
+  for (let bi = 280; bi + H < bd.length; bi += H) {
+    const d0 = bd[bi], d1 = bd[bi + H], b0 = bc[d0], b1 = bc[d1]; if (!b0 || !b1) continue;
+    const rows = []; for (const s of names) { const p = P[s], j = p.m[d0], j1 = p.m[d1]; if (j == null || j1 == null) continue; const v = p.F.vol60[j]; if (!isFinite(v)) continue; rows.push({ p, j, v, ex: p.cl[j1] / p.cl[j] - 1 - (b1 / b0 - 1) }); }
+    if (rows.length < 30) continue;
+    const cuts = grouped ? rows.map(r => r.v).sort((a, b) => a - b) : null, q1 = cuts && cuts[Math.floor(cuts.length / 3)], q2 = cuts && cuts[Math.floor(cuts.length * 2 / 3)];
+    for (const g of gn) {
+      const m = rows.filter(r => !grouped || (g === 'low' ? r.v <= q1 : g === 'mid' ? r.v > q1 && r.v <= q2 : r.v > q2)); if (m.length < 12) continue;
+      for (const f of ALL) { const mm = m.filter(r => isFinite(r.p.F[f][r.j])); if (mm.length < 12) continue; const ic = rkSpearman(mm.map(r => r.p.F[f][r.j]), mm.map(r => r.ex)); if (ic != null) IC[g][f].push(ic); }
+    }
+  }
+  const out = {};
+  for (const g of gn) { out[g] = { trend: {}, rev: {} }; for (const f of ALL) {
+    const a = IC[g][f], n = a.length, kind = RK_TREND.includes(f) ? 'trend' : 'rev';
+    if (n < 8) { out[g][kind][f] = { n, status: 'too few', sign: 0 }; continue; }
+    const mean = x => x.reduce((t, v) => t + v, 0) / x.length, m = mean(a), sd = Math.sqrt(a.reduce((t, v) => t + (v - m) ** 2, 0) / (n - 1)) || 1e-9, t = m / (sd / Math.sqrt(n));
+    const h1 = mean(a.slice(0, n >> 1)), h2 = mean(a.slice(n >> 1)), ok = Math.abs(m) >= 0.03 && Math.abs(t) >= 1.5 && Math.sign(h1) === Math.sign(m) && Math.sign(h2) === Math.sign(m);
+    out[g][kind][f] = { n, ic: +m.toFixed(3), t: +t.toFixed(2), h1: +h1.toFixed(3), h2: +h2.toFixed(3), status: ok ? 'edge' : Math.abs(t) >= 1.5 ? 'inconsistent' : 'no edge', sign: ok ? Math.sign(m) : 0 };
+  } }
+  return { groups: out, nSyms: names.length };
+}
+// Today's peer rank for every symbol in B (bars). stats = rankStudy().groups
+function rankNow(B, stats, grouped) {
+  const R = {}; for (const s in B) { const b = B[s]; if (!b || b.length < 280 || b.some(x => !isFinite(x.c) || x.c <= 0)) continue; const r = rkFactors(b), i = b.length - 1; if (!isFinite(r.F.vol60[i])) continue; R[s] = { F: r.F, i, R: r.R[i], ret1m: r.cl[i] / r.cl[i - 21] - 1 }; }
+  const names = Object.keys(R), vs = names.map(s => R[s].F.vol60[R[s].i]).sort((a, b) => a - b), q1 = vs[Math.floor(vs.length / 3)], q2 = vs[Math.floor(vs.length * 2 / 3)];
+  const grp = {}; names.forEach(s => { const v = R[s].F.vol60[R[s].i]; const g = !grouped ? 'coin' : v <= q1 ? 'low' : v <= q2 ? 'mid' : 'high'; (grp[g] = grp[g] || []).push(s); });
+  const pctOf = (vals) => { const rk = rkRank(vals), n = vals.length; return rk.map(x => n > 1 ? x / (n - 1) * 100 : 50); };
+  const rows = {};
+  for (const g in grp) {
+    const M = grp[g], used = RK_TREND.filter(f => stats[g] && stats[g].trend[f] && stats[g].trend[f].sign !== 0);
+    const comp = new Array(M.length).fill(0), pf = {}; used.forEach(f => { const p = pctOf(M.map(s => R[s].F[f][R[s].i])); pf[f] = p; const sg = stats[g].trend[f].sign; p.forEach((v, k) => { comp[k] += (sg > 0 ? v : 100 - v) / used.length; }); });
+    const cp = used.length ? pctOf(comp) : null;
+    M.forEach((s, k) => { rows[s] = { g, ok: used.length > 0, pct: cp ? Math.round(cp[k]) : null, nf: used.length, oversold: (R[s].R != null && R[s].R < 30) || R[s].ret1m <= -0.15 }; });
+  }
+  return rows;
+}
+async function rankStage(now, bars) {
+  const t0 = Date.now(), BUDGET = 12 * 60e3;
+  const liq = Object.keys(bars).filter(s => !/-USD$|\.NS$|\.BO$|^\^|^(SPY|QQQ|IWM)$/.test(s)).map(s => { const b = bars[s].slice(-20); return [s, b.reduce((a, x) => a + x.c * (x.v || 0), 0)]; }).sort((a, b) => b[1] - a[1]).slice(0, 300).map(x => x[0]);
+  const long = {}; let next = 0;
+  const spy = await yahooBars('SPY', '10y'); if (!spy) throw new Error('SPY 10y missing');
+  async function worker() { while (next < liq.length) { if (Date.now() - t0 > BUDGET) return; const s = liq[next++]; try { const b = await yahooBars(s, '10y'); if (b && b.length > 400) long[s] = b; } catch { /* skip */ } await sleep(200); } }
+  await Promise.all([worker(), worker(), worker()]);
+  const stStats = rankStudy(long, spy, true);
+  const rows = rankNow(bars_ex(bars), stStats.groups, true);
+  // crypto: top coins by 24h volume on Binance
+  let coins = {}, cStats = null, cRows = {};
+  try {
+    const tk = await getJSON('https://api.binance.com/api/v3/ticker/24hr');
+    const top = (tk || []).filter(x => /USDT$/.test(x.symbol) && !/(UP|DOWN|BULL|BEAR)USDT$/.test(x.symbol) && !/^(USDC|FDUSD|TUSD|BUSD|USDP|DAI|EUR|AEUR|USD1)/.test(x.symbol)).sort((a, b) => +b.quoteVolume - +a.quoteVolume).slice(0, 55).map(x => x.symbol);
+    for (const sy of top) { const k = await getJSON('https://api.binance.com/api/v3/klines?symbol=' + sy + '&interval=1d&limit=1000').catch(() => null); if (Array.isArray(k) && k.length > 400) coins[sy.slice(0, -4)] = k.map(x => ({ t: +x[0], o: +x[1], h: +x[2], l: +x[3], c: +x[4], v: +x[5] })); await sleep(120); }
+    if (coins.BTC) { cStats = rankStudy(coins, coins.BTC, false); cRows = rankNow(coins, cStats.groups, false); }
+  } catch (e) { console.log('rank crypto failed:', e && e.message); }
+  const res = { updated: now, study: { stocks: stStats.nSyms, coins: cStats ? cStats.nSyms : 0 }, groups: Object.assign({}, stStats.groups, cStats ? cStats.groups : {}), rows, coins: cRows };
+  RANKS = res;
+  await writeFile(new URL('ranks.json', OUT), JSON.stringify(res));
+  const ed = Object.entries(res.groups).map(([g, v]) => g + ':' + Object.values(v.trend).filter(x => x.sign).length + '/' + RK_TREND.length).join(' ');
+  console.log('ranks: study ' + res.study.stocks + ' stocks, ' + res.study.coins + ' coins · confirmed trend signals ' + ed + ' · ranked ' + Object.keys(rows).length + ' stocks, ' + Object.keys(cRows).length + ' coins');
+}
+function bars_ex(bars) { const o = {}; for (const s in bars) if (!/-USD$|\.NS$|\.BO$|^\^/.test(s)) o[s] = bars[s]; return o; }
 async function main() {
   await mkdir(OUT, { recursive: true });
   let prev = null; try { prev = JSON.parse(await readFile(new URL('calibration.json', OUT), 'utf8')).cal; } catch { /* first run */ }
@@ -500,6 +592,7 @@ async function main() {
   await writeFile(new URL('history/' + day + '.json', OUT), JSON.stringify({ updated: now, reg: cal.reg, stocks: cal.stocks, feats: Object.fromEntries(Object.entries(cal.feats).map(([k, f]) => [k, { pts: f.pts, status: f.status, nT: f.nT, mT: f.mT }])), byReg: cal.byReg }));
   console.log('calibrated', cal.stocks, 'stocks · regime', cal.reg, '· changes', cal.log.length);
   try { await earningsStage(now, new Set(symbols.map(u => u.s))); } catch (e) { console.log('earnings stage failed:', e && e.message); }
+  try { await rankStage(now, bars); } catch (e) { console.log('rank stage failed:', e && e.message); }
   try { await exchangeStage(now, cal); } catch (e) { console.log('exchange stage failed:', e && e.message); }
   try { await intradayStage(now, bars); } catch (e) { console.log('intraday stage failed:', e && e.message); }
   try { await indiaStage(now); } catch (e) { console.log('india stage failed:', e && e.message); }
