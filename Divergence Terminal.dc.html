@@ -137,7 +137,12 @@ a:hover{color:oklch(0.44 0.12 165)}
     <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:stretch">
       <div style="flex:2 1 620px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px">
         <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
-          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)">Market map · {{ heatCount }} stocks</span>
+          <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)">{{ heatTitle }}</span>
+          <div style="display:flex;gap:4px">
+            <sc-for list="{{ mktSeg }}" as="s" hint-placeholder-count="3">
+              <div onClick="{{ s.pick }}" style="{{ s.style }}">{{ s.label }}</div>
+            </sc-for>
+          </div>
           <div style="display:flex;gap:4px;margin-left:auto">
             <sc-for list="{{ heatSeg }}" as="s" hint-placeholder-count="4">
               <div onClick="{{ s.pick }}" style="{{ s.style }}">{{ s.label }}</div>
@@ -159,10 +164,33 @@ a:hover{color:oklch(0.44 0.12 165)}
             </div>
           </sc-for>
           <sc-if value="{{ heatEmpty }}" hint-placeholder-val="{{ true }}">
-            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--mute)">Loading daily prices for the stock universe…</div>
+            <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:13px;color:var(--mute)">{{ heatEmptyMsg }}</div>
           </sc-if>
         </div>
         <span style="font-family:'JetBrains Mono',monospace;font-size:9.5px;color:var(--faint)">{{ heatLegend }}</span>
+        <div style="display:flex;flex-direction:column;gap:6px;border-top:1px solid var(--line);padding-top:10px">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+            <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)">Sector performance · average of stocks in each sector</span>
+            <div style="display:flex;gap:4px;margin-left:auto">
+              <sc-for list="{{ secSeg }}" as="s" hint-placeholder-count="3">
+                <div onClick="{{ s.pick }}" style="{{ s.style }}">{{ s.label }}</div>
+              </sc-for>
+            </div>
+          </div>
+          <span style="font-size:12px;line-height:1.45">{{ secNote }}</span>
+          <div style="display:grid;grid-template-columns:minmax(110px,1.2fr) 50px 58px 58px 58px 70px minmax(60px,1fr);gap:8px;align-items:center;font-family:'JetBrains Mono',monospace;font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute);padding:4px 0">
+            <span>Sector</span><span style="text-align:right">Stocks</span><span style="text-align:right">Day</span><span style="text-align:right">Week</span><span style="text-align:right">Month</span><span style="text-align:right">Buy / Sell</span><span></span>
+          </div>
+          <sc-for list="{{ secRows }}" as="r" hint-placeholder-count="0">
+            <div style="display:grid;grid-template-columns:minmax(110px,1.2fr) 50px 58px 58px 58px 70px minmax(60px,1fr);gap:8px;align-items:center;padding:5px 0;border-top:1px solid var(--line);font-family:'JetBrains Mono',monospace;font-size:11.5px">
+              <span style="font-family:inherit;font-weight:700;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.name }}</span>
+              <span style="text-align:right;color:var(--mute)">{{ r.n }}</span>
+              <span style="{{ r.dS }}">{{ r.d }}</span><span style="{{ r.wS }}">{{ r.w }}</span><span style="{{ r.mS }}">{{ r.m }}</span>
+              <span style="text-align:right;color:var(--mute)">{{ r.bs }}</span>
+              <div style="height:8px;background:var(--panel2);border-radius:4px;position:relative;overflow:hidden"><div style="{{ r.bar }}"></div></div>
+            </div>
+          </sc-for>
+        </div>
       </div>
 
       <div style="flex:1 1 340px;min-width:0;display:flex;flex-direction:column;gap:12px">
@@ -370,6 +398,7 @@ a:hover{color:oklch(0.44 0.12 165)}
           </div>
         </div>
       </div>
+      <sc-if value="{{ inLinkShow }}" hint-placeholder-val="{{ true }}">
       <div style="flex:1 1 420px;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:8px">
         <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)">Does the US market predict India? · tested on your data</span>
         <span style="{{ inLink.verdictStyle }}">{{ inLink.verdict }}</span>
@@ -390,10 +419,11 @@ a:hover{color:oklch(0.44 0.12 165)}
         </div>
         <span style="font-size:10.5px;line-height:1.5;color:var(--faint);text-wrap:pretty">Method: pairs each Nifty 50 session with the S&amp;P 500 session that closed just before it (the US closes after India does). Fitted on the older two-thirds of 2 years of data, then checked on the most recent third. A forecast is shown only if the link is positive in both halves (r ≥ 0.15, t ≥ 2) and the direction hit rate beats always guessing the more common direction by 5 points. Otherwise none is shown.</span>
       </div>
+      </sc-if>
     </div>
     <div style="background:var(--panel);border:1px solid var(--line);border-radius:8px;display:flex;flex-direction:column;min-width:0">
       <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)">
-        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)">India screener · {{ inCaption }}</span>
+        <span style="font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--mute)">{{ inTitle }} · {{ inCaption }}</span>
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-left:auto">
           <sc-for list="{{ inFltSeg }}" as="s" hint-placeholder-count="7">
             <div onClick="{{ s.pick }}" style="{{ s.style }}">{{ s.label }}</div>
@@ -1880,6 +1910,7 @@ async function yahooNews(q, n) {
 const BARS_KEY = 'divergence.bars.v1', IDX_KEY = 'divergence.idx.v1';
 const INDIA = ('RELIANCE|Reliance Industries|Energy;TCS|Tata Consultancy|IT;HDFCBANK|HDFC Bank|Banks;ICICIBANK|ICICI Bank|Banks;INFY|Infosys|IT;BHARTIARTL|Bharti Airtel|Telecom;SBIN|State Bank of India|Banks;LT|Larsen & Toubro|Infrastructure;ITC|ITC|FMCG;HINDUNILVR|Hindustan Unilever|FMCG;KOTAKBANK|Kotak Mahindra Bank|Banks;AXISBANK|Axis Bank|Banks;BAJFINANCE|Bajaj Finance|Financials;MARUTI|Maruti Suzuki|Auto;SUNPHARMA|Sun Pharma|Pharma;HCLTECH|HCL Technologies|IT;M&M|Mahindra & Mahindra|Auto;TITAN|Titan|Consumer;ULTRACEMCO|UltraTech Cement|Materials;NTPC|NTPC|Power;ONGC|ONGC|Energy;POWERGRID|Power Grid|Power;ASIANPAINT|Asian Paints|Consumer;ADANIENT|Adani Enterprises|Infrastructure;ADANIPORTS|Adani Ports|Infrastructure;COALINDIA|Coal India|Energy;BAJAJFINSV|Bajaj Finserv|Financials;NESTLEIND|Nestle India|FMCG;WIPRO|Wipro|IT;JSWSTEEL|JSW Steel|Metals;TATASTEEL|Tata Steel|Metals;GRASIM|Grasim|Materials;TECHM|Tech Mahindra|IT;HINDALCO|Hindalco|Metals;INDUSINDBK|IndusInd Bank|Banks;CIPLA|Cipla|Pharma;DRREDDY|Dr Reddy\'s|Pharma;EICHERMOT|Eicher Motors|Auto;BRITANNIA|Britannia|FMCG;APOLLOHOSP|Apollo Hospitals|Healthcare;HEROMOTOCO|Hero MotoCorp|Auto;BAJAJ-AUTO|Bajaj Auto|Auto;TATACONSUM|Tata Consumer|FMCG;SBILIFE|SBI Life|Financials;HDFCLIFE|HDFC Life|Financials;SHRIRAMFIN|Shriram Finance|Financials;BEL|Bharat Electronics|Defence;TRENT|Trent|Consumer;ETERNAL|Eternal (Zomato)|Internet;JIOFIN|Jio Financial|Financials;DMART|Avenue Supermarts|Consumer;HAL|Hindustan Aeronautics|Defence;ADANIGREEN|Adani Green|Power;ADANIPOWER|Adani Power|Power;TATAPOWER|Tata Power|Power;VEDL|Vedanta|Metals;IOC|Indian Oil|Energy;BPCL|BPCL|Energy;GAIL|GAIL|Energy;DLF|DLF|Real estate;GODREJCP|Godrej Consumer|FMCG;DABUR|Dabur|FMCG;PIDILITIND|Pidilite|Materials;SIEMENS|Siemens India|Industrials;ABB|ABB India|Industrials;HAVELLS|Havells|Industrials;LTIM|LTIMindtree|IT;PERSISTENT|Persistent Systems|IT;COFORGE|Coforge|IT;MPHASIS|Mphasis|IT;NAUKRI|Info Edge|Internet;PAYTM|Paytm|Internet;NYKAA|Nykaa|Internet;POLICYBZR|PB Fintech|Internet;IRCTC|IRCTC|Consumer;IRFC|IRFC|Financials;RECLTD|REC|Financials;PFC|Power Finance Corp|Financials;BANKBARODA|Bank of Baroda|Banks;PNB|Punjab National Bank|Banks;CANBK|Canara Bank|Banks;UNIONBANK|Union Bank|Banks;IDFCFIRSTB|IDFC First Bank|Banks;FEDERALBNK|Federal Bank|Banks;AUBANK|AU Small Finance Bank|Banks;YESBANK|Yes Bank|Banks;CHOLAFIN|Cholamandalam Finance|Financials;MUTHOOTFIN|Muthoot Finance|Financials;ICICIGI|ICICI Lombard|Financials;ICICIPRULI|ICICI Prudential Life|Financials;LICI|LIC|Financials;DIVISLAB|Divi\'s Labs|Pharma;LUPIN|Lupin|Pharma;TORNTPHARM|Torrent Pharma|Pharma;ZYDUSLIFE|Zydus Lifesciences|Pharma;AUROPHARMA|Aurobindo Pharma|Pharma;MAXHEALTH|Max Healthcare|Healthcare;TVSMOTOR|TVS Motor|Auto;ASHOKLEY|Ashok Leyland|Auto;MOTHERSON|Samvardhana Motherson|Auto;BOSCHLTD|Bosch India|Auto;AMBUJACEM|Ambuja Cements|Materials;SHREECEM|Shree Cement|Materials;JINDALSTEL|Jindal Steel|Metals;SAIL|SAIL|Metals;NMDC|NMDC|Metals;HINDZINC|Hindustan Zinc|Metals;BHEL|BHEL|Industrials;CGPOWER|CG Power|Industrials;POLYCAB|Polycab|Industrials;DIXON|Dixon Technologies|Electronics;BSE|BSE Ltd|Financials;CDSL|CDSL|Financials;MAZDOCK|Mazagon Dock|Defence;BDL|Bharat Dynamics|Defence;COCHINSHIP|Cochin Shipyard|Defence;SUZLON|Suzlon Energy|Power;NHPC|NHPC|Power;INDIGO|InterGlobe Aviation|Consumer;INDHOTEL|Indian Hotels|Consumer;VBL|Varun Beverages|FMCG;UNITDSPR|United Spirits|FMCG;MARICO|Marico|FMCG;COLPAL|Colgate-Palmolive India|FMCG;KALYANKJIL|Kalyan Jewellers|Consumer;LODHA|Lodha Developers|Real estate;GODREJPROP|Godrej Properties|Real estate;OBEROIRLTY|Oberoi Realty|Real estate;IDEA|Vodafone Idea|Telecom;INDUSTOWER|Indus Towers|Telecom;KPITTECH|KPIT Technologies|IT;TATAELXSI|Tata Elxsi|IT;OFSS|Oracle Financial Services|IT;HUDCO|HUDCO|Financials;IREDA|IREDA|Financials;RVNL|Rail Vikas Nigam|Infrastructure;NBCC|NBCC|Infrastructure;ADANIENSOL|Adani Energy Solutions|Power;JSWENERGY|JSW Energy|Power').split(';').map(s => { const [t, n, sec] = s.split('|'); return { sym: t + '.NS', tk: t, name: n, yh: t + '.NS', kind: 'india', isec: sec }; });
 const INDIA_IDX = [['^NSEI', 'Nifty 50'], ['^BSESN', 'Sensex'], ['^NSEBANK', 'Bank Nifty']];
+const CANADA = [], CANADA_IDX = [['^GSPTSE', 'TSX Composite']], MKT_W = {};
 function corrOf(x, y) { const n = x.length; if (n < 20) return null; let mx = 0, my = 0; for (let i = 0; i < n; i++) { mx += x[i]; my += y[i]; } mx /= n; my /= n; let sxy = 0, sxx = 0, syy = 0; for (let i = 0; i < n; i++) { const a = x[i] - mx, b = y[i] - my; sxy += a * b; sxx += a * a; syy += b * b; } const r = sxx && syy ? sxy / Math.sqrt(sxx * syy) : 0; return { r, n, beta: sxx ? sxy / sxx : 0, alpha: my - (sxx ? sxy / sxx : 0) * mx, t: r * Math.sqrt((n - 2) / Math.max(1e-9, 1 - r * r)) }; }
 function usIndiaLink(nifty, spx) {
   if (!nifty || !spx || nifty.length < 200 || spx.length < 200) return null;
@@ -1962,8 +1993,10 @@ function pressureOf(cl) {
   return { st, lt, rsi: r[i] };
 }
 function inr(v) { if (v == null || isNaN(v)) return '—'; return '₹' + v.toLocaleString('en-IN', { maximumFractionDigits: v >= 1000 ? 0 : 2, minimumFractionDigits: v >= 1000 ? 0 : 2 }); }
+function cad(v) { if (v == null || isNaN(v)) return '—'; return 'C$' + v.toLocaleString('en-US', { maximumFractionDigits: 2, minimumFractionDigits: 2 }); }
 function levelFmt(unit) {
   if (unit === 'inr') return inr;
+  if (unit === 'cad') return cad;
   if (unit === 'yld') return v => v == null ? '—' : v.toFixed(2) + '%';
   if (unit === 'fx') return v => v == null ? '—' : v.toFixed(4);
   if (unit === 'pts' || unit === 'vix') return v => v == null ? '—' : v.toLocaleString('en-US', { maximumFractionDigits: v < 100 ? 2 : 0 });
@@ -2520,7 +2553,7 @@ function calFeatsAt(cl, hi, lo, v, E10, E50, E200, R, H, k) {
   return f;
 }
 async function runCalibration(barsMap, spyDayClose, prev, newsLog) {
-  const syms = Object.keys(barsMap).filter(s => barsMap[s] && barsMap[s].length >= 300 && !/-USD$|\.NS$|\.BO$|^\^/.test(s)).slice(0, 350);
+  const syms = Object.keys(barsMap).filter(s => barsMap[s] && barsMap[s].length >= 300 && !/-USD$|\.NS$|\.BO$|\.TO$|^\^/.test(s)).slice(0, 350);
   const ev = {}; CAL_FEATS.forEach(([id]) => { ev[id] = { T: [], V: [] }; });
   let lastDay = 0; Object.values(spyDayClose.map).forEach(() => {}); lastDay = spyDayClose.last;
   const cutoff = lastDay - 120, valEnd = lastDay - 30, H20 = 20, COST = 0.001;
@@ -2977,7 +3010,7 @@ class Component extends DCLogic {
   componentDidMount() { try { this.applyKeep(); this.applyKeepIndia(); } catch (e) { console.warn('screener keep', e && e.message); } this.mount0(); this.loadPublished(); this.pubT = setInterval(() => this.loadPublished(), 30 * 60e3); setTimeout(() => this.idxStep && this.idxStep(), 2000); this.idxStepT = setInterval(() => { try { this.idxStep && this.idxStep(); } catch (e) { /* retry */ } }, 5000); setTimeout(() => this.cryptoStream(), 1500); this.idxTimer = setInterval(() => this.idxLive(), 15000); this.cFlushT = setInterval(() => { if (this.pendingQ && !this.dead) { const q = this.pendingQ; this.pendingQ = null; this.cPush = Date.now(); this.pushCryptoPx(q); } }, 2500); this.cal = lsGet(CAL_KEY, null); this.calTimer = setInterval(() => this.calMaybe(), 60000); setTimeout(() => this.calMaybe(), 45000); if (this.state.scrAsset === 'crypto') this.cryptoBoot(); if (this.state.scrAsset === 'india') this.indiaBoot(); this.onVis = () => { if (document.visibilityState === 'visible') { try { this.growStep().catch(() => {}); this.liveStep().catch(() => {}); this.intraStep().catch(() => {}); } catch (e) { /* ignore */ } } }; document.addEventListener('visibilitychange', this.onVis); }
   shouldComponentUpdate(np, ns) {
     if (np !== this.props) return true;
-    const s = this.state, ui = ['inFilter', 'inSort', 'inLimit', 'inSec', 'scrAsset', 'cFilter', 'cSort', 'cLimit', 'tab', 'shortF', 'sel', 'detail', 'termQ', 'termRes', 'theme', 'horizon', 'heatMetric', 'termFilter', 'termSort', 'termLimit', 'termRange', 'sigMode', 'newsCatT', 'f13Sel', 'gSort', 'gSize', 'gLim', 'confRR', 'acct', 'riskPct', 'toasts', 'alerts', 'journal', 'intraFilter', 'intraLimit', 'pf', 'pfSel'];
+    const s = this.state, ui = ['inFilter', 'inSort', 'inLimit', 'inSec', 'scrAsset', 'cFilter', 'cSort', 'cLimit', 'tab', 'shortF', 'sel', 'detail', 'termQ', 'termRes', 'theme', 'horizon', 'heatMetric', 'mktSel', 'secSort', 'mktMsg', 'termFilter', 'termSort', 'termLimit', 'termRange', 'sigMode', 'newsCatT', 'f13Sel', 'gSort', 'gSize', 'gLim', 'confRR', 'acct', 'riskPct', 'toasts', 'alerts', 'journal', 'intraFilter', 'intraLimit', 'pf', 'pfSel'];
     if (ui.some(k => ns[k] !== s[k])) { this.lastPaint = Date.now(); return true; }
     const now = Date.now(), gap = 1500;
     if (now - (this.lastPaint || 0) >= gap) { this.lastPaint = now; return true; }
@@ -3271,10 +3304,10 @@ class Component extends DCLogic {
     } finally { this.indiaBusy = false; }
   }
   indiaVals() {
-    const st = this.state, on = st.scrAsset === 'india', M = "font-family:'JetBrains Mono',monospace;";
-    const blank = { inIdx: [], inSectors: [], inLink: { verdict: '', verdictStyle: '', hasPred: false, stats: [] }, inFltSeg: [], inHead: [], inRows: [], inGrid: '1fr', inCaption: '', inMore: false, inShowMore: () => {} };
+    const st = this.state, isCA = st.scrAsset === 'canada', on = st.scrAsset === 'india' || isCA, CT = isCA ? CANADA : INDIA, IX = isCA ? CANADA_IDX : INDIA_IDX, fmt = isCA ? cad : inr, M = "font-family:'JetBrains Mono',monospace;";
+    const blank = { inTitle: '', inLinkShow: false, inIdx: [], inSectors: [], inLink: { verdict: '', verdictStyle: '', hasPred: false, stats: [] }, inFltSeg: [], inHead: [], inRows: [], inGrid: '1fr', inCaption: '', inMore: false, inShowMore: () => {} };
     if (!on) return blank;
-    const key = [st.inTick, st.horizon, st.inFilter, st.inLimit, st.inSec, JSON.stringify(st.inSort), st.termQ, st.bars['^NSEI'], st.bars['^GSPC'], st.idx && st.idx['^GSPC']].map(v => typeof v === 'object' ? (v ? (v.length || 1) + ':' + (Array.isArray(v) && v.length ? v[v.length - 1].c : '') : '') : v).join('|');
+    const key = [st.scrAsset, st.inTick, st.horizon, st.inFilter, st.inLimit, st.inSec, JSON.stringify(st.inSort), st.termQ, st.bars['^NSEI'], st.bars['^GSPTSE'], st.bars['^GSPC'], st.idx && st.idx['^GSPC']].map(v => typeof v === 'object' ? (v ? (v.length || 1) + ':' + (Array.isArray(v) && v.length ? v[v.length - 1].c : '') : '') : v).join('|');
     if (this.inCache && this.inCache.k === key) return this.inCache.v;
     const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
     const pct = (v, dd) => v == null || !isFinite(v) ? '—' : (v >= 0 ? '+' : '') + v.toFixed(dd == null ? 2 : dd) + '%';
@@ -3284,7 +3317,7 @@ class Component extends DCLogic {
     const pill = w => M + 'font-size:9.5px;font-weight:700;padding:3px 7px;border-radius:4px;white-space:nowrap;color:' + (/buy/i.test(w) ? 'var(--up)' : /sell/i.test(w) ? 'var(--down)' : 'var(--mute)') + ';background:var(--panel2)';
     const open = sym => () => this.setState({ sel: sym, detail: true });
     const L = [];
-    INDIA.forEach(a => {
+    CT.forEach(a => {
       const b = st.bars[a.sym]; if (!b || b.length < 60) return;
       const cl = b.map(x => x.c), n = cl.length, i = n - 1, R = rsi(cl, 14), Mc = macd(cl), E10 = ema(cl, 10), E50 = ema(cl, 50), E200 = n >= 200 ? ema(cl, 200) : null;
       const e200 = E200 ? E200[i] : null;
@@ -3304,10 +3337,10 @@ class Component extends DCLogic {
     });
     const secs = {}; L.forEach(x => { const s = secs[x.a.isec] = secs[x.a.isec] || { b: 0, s: 0, n: 0 }; s.n++; if (x.act === 'BUY') s.b++; if (x.act === 'SELL') s.s++; });
     const inSectors = [{ t: 'All sectors', pick: () => this.setState({ inSec: null, inLimit: 50 }), style: M + 'font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:5px;cursor:pointer;' + (!st.inSec ? 'background:var(--text);color:var(--bg)' : 'background:var(--panel2);color:var(--mute)') }].concat(Object.keys(secs).sort((a, b) => (secs[b].b - secs[b].s) - (secs[a].b - secs[a].s)).map(k => { const s = secs[k], net = s.b - s.s; return { t: k + ' ' + s.b + '↑ ' + s.s + '↓', pick: () => this.setState({ inSec: st.inSec === k ? null : k, inLimit: 50 }), style: M + 'font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:5px;cursor:pointer;' + (st.inSec === k ? 'background:var(--text);color:var(--bg)' : 'background:var(--panel2);color:' + (net > 0 ? 'var(--up)' : net < 0 ? 'var(--down)' : 'var(--mute)')) }; }));
-    const inIdx = INDIA_IDX.map(([s, nm]) => { const b = st.bars[s]; if (!b || b.length < 60) return { name: nm, px: '…', ch: '', chStyle: '', st: '…', lt: '…', stStyle: pill(''), ltStyle: pill(''), open: open(s) }; const cl = b.map(x => x.c), n = cl.length, v = levelsView(cl, null, null, 'pts'), c = (cl[n - 1] / cl[n - 2] - 1) * 100; return { name: nm, px: cl[n - 1].toLocaleString('en-IN', { maximumFractionDigits: 0 }), ch: pct(c), chStyle: M + 'font-size:10.5px;font-weight:700;color:' + cv(c), st: v ? v.stW : '—', lt: v ? v.ltW : '—', stStyle: pill(v ? v.stW : ''), ltStyle: pill(v ? v.ltW : ''), open: open(s) }; });
+    const inIdx = IX.map(([s, nm]) => { const b = st.bars[s]; if (!b || b.length < 60) return { name: nm, px: '…', ch: '', chStyle: '', st: '…', lt: '…', stStyle: pill(''), ltStyle: pill(''), open: open(s) }; const cl = b.map(x => x.c), n = cl.length, v = levelsView(cl, null, null, 'pts'), c = (cl[n - 1] / cl[n - 2] - 1) * 100; return { name: nm, px: cl[n - 1].toLocaleString(isCA ? 'en-US' : 'en-IN', { maximumFractionDigits: 0 }), ch: pct(c), chStyle: M + 'font-size:10.5px;font-weight:700;color:' + cv(c), st: v ? v.stW : '—', lt: v ? v.ltW : '—', stStyle: pill(v ? v.stW : ''), ltStyle: pill(v ? v.ltW : ''), open: open(s) }; });
     // US -> India link
     const spx = st.bars['^GSPC'] && st.bars['^GSPC'].length > 200 ? st.bars['^GSPC'] : (st.idx && st.idx['^GSPC'] ? closesToBars(st.idx['^GSPC'].t, st.idx['^GSPC'].c) : null);
-    const LK = usIndiaLink(st.bars['^NSEI'], spx);
+    const LK = isCA ? null : usIndiaLink(st.bars['^NSEI'], spx);
     const sx = (k, v, sub, c) => ({ k, v, sub, style: M + 'font-size:13px;font-weight:700;color:' + (c || 'var(--text)') });
     let inLink = { verdict: 'Loading Nifty 50 and S&P 500 history…', verdictStyle: 'font-size:13px;color:var(--mute)', hasPred: false, stats: [] };
     if (LK) {
@@ -3343,14 +3376,14 @@ class Component extends DCLogic {
     const cols = [['n', '#', 'left'], ['tk', 'Ticker', 'left'], ['name', 'Company', 'left'], ['sec', 'Sector', 'left'], ['px', 'Price', 'right'], ['ch', 'Change', 'right'], ['w', '1 week', 'right'], ['r', 'RSI', 'right'], ['m', 'MACD', 'right'], ['trend', 'EMA trend', 'left'], ['sig', 'Signal', 'left'], ['pos', '52w pos', 'right'], ['tags', 'Signals', 'left']];
     const inHead = cols.map(([k, label, al]) => ({ label: label + (srt.k === k ? (srt.d < 0 ? ' ↓' : ' ↑') : ''), pick: () => { if (!G[k]) return; this.setState(s => ({ inSort: { k, d: s.inSort && s.inSort.k === k ? -s.inSort.d : -1 } })); }, style: M + 'font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:8px 0;white-space:nowrap;cursor:pointer;text-align:' + al + ';' + (k === 'tags' || k === 'trend' || k === 'sig' ? 'padding-left:8px;' : '') + 'color:' + (srt.k === k ? 'var(--text)' : 'var(--mute)') }));
     const R2 = M + 'font-size:11.5px;text-align:right;';
-    const inRows = T.map((x, k) => ({ n: String(k + 1), tk: x.a.tk, name: x.a.name, sec: x.a.isec, px: inr(x.px), ch: pct(x.ch), chS: R2 + 'font-weight:700;color:' + cv(x.ch), w: pct(x.w, 1), wS: R2 + 'color:' + cv(x.w),
+    const inRows = T.map((x, k) => ({ n: String(k + 1), tk: x.a.tk, name: x.a.name, sec: x.a.isec, px: fmt(x.px), ch: pct(x.ch), chS: R2 + 'font-weight:700;color:' + cv(x.ch), w: pct(x.w, 1), wS: R2 + 'color:' + cv(x.w),
       r: x.r.toFixed(0), rS: R2 + 'color:' + (x.r < 30 ? 'var(--up)' : x.r > 70 ? 'var(--down)' : 'var(--text)'), m: (x.hist >= 0 ? '+' : '') + x.hist.toFixed(2), mS: R2 + 'color:' + cv(x.hist),
       trend: x.trend, tS: 'font-size:11.5px;padding-left:8px;color:' + (/up/i.test(x.trend) ? 'var(--up)' : /down/i.test(x.trend) ? 'var(--down)' : 'var(--mute)'),
       sig: x.sig ? x.act + ' ' + x.sig.score : '—', sS: M + 'font-size:11px;font-weight:700;padding-left:8px;color:' + (x.act === 'BUY' ? 'var(--up)' : x.act === 'SELL' ? 'var(--down)' : 'var(--mute)'),
       pos: Math.round(x.pos) + '%', tags: x.tags.slice(0, 4).map(g => chip(g[0], g[1])), open: open(x.a.sym) }));
     const v = { inIdx, inSectors, inLink, inFltSeg: Object.keys(fm).map(k => ({ label: k + ' ' + L.filter(fm[k]).length, style: segS(flt === k), pick: () => this.setState({ inFilter: k, inLimit: 50 }) })), inHead, inRows,
       inGrid: '30px 92px minmax(140px,1.4fr) minmax(90px,.8fr) 86px 66px 66px 40px 64px 92px 82px 60px minmax(180px,1.8fr)',
-      inCaption: L.length + ' of ' + INDIA.length + ' stocks loaded' + (st.inSec ? ' · ' + st.inSec : '') + ' · ' + (st.horizon === 'short' ? 'short term' : 'long term'),
+      inTitle: isCA ? 'Canada screener' : 'India screener', inLinkShow: !isCA, inCaption: L.length + ' of ' + CT.length + ' stocks loaded' + (st.inSec ? ' · ' + st.inSec : '') + ' · ' + (st.horizon === 'short' ? 'short term' : 'long term'),
       inMore: tot > (st.inLimit || 50), inShowMore: () => this.setState(s => ({ inLimit: (s.inLimit || 50) + 50 })) };
     this.inCache = { k: key, v };
     return v;
@@ -3450,7 +3483,7 @@ class Component extends DCLogic {
     if (EA && EA.q && !this.dead) { this.earn = EA; this.setState({ earnTick: Date.now() }); }
     const B = await get('data/bars.json');
     if (B && B.bars && !this.dead) {
-      this.pubSyms = new Set(Object.keys(B.bars).filter(k => !/-USD$|\.NS$|\.BO$|^\^/.test(k)));
+      this.pubSyms = new Set(Object.keys(B.bars).filter(k => !/-USD$|\.NS$|\.BO$|\.TO$|^\^/.test(k)));
       try { if (this.fixCryptoPos()) { const p = JSON.parse(JSON.stringify(this.state.pf)); pfStore(p); this.setState({ pf: p }); } } catch (e) { /* ignore */ }
       this.setState(s0 => {
         const bars = Object.assign({}, s0.bars); let n = 0;
@@ -3603,9 +3636,9 @@ class Component extends DCLogic {
     const segS = on => 'padding:5px 10px;border-radius:5px;font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap;' + (on ? 'background:var(--text);color:var(--bg)' : 'color:var(--mute)');
     const isC = st.scrAsset === 'crypto';
     const base = {
-      scrAssetSeg: [['stocks', 'S&P 500'], ['exch', 'NASDAQ/NYSE'], ['india', 'India'], ['crypto', 'Crypto']].map(([id, label]) => ({ label, style: segS((st.scrAsset || 'stocks') === id), pick: () => { try { sessionStorage.setItem('divergence.scrAsset', id); } catch (e) { /* ignore */ } this.setState({ scrAsset: id, scrMsg: '' }); if (id === 'crypto') this.cryptoBoot(); if (id === 'india') this.indiaBoot(); } })),
-      scrStocks: !isC && st.scrAsset !== 'india' && st.scrAsset !== 'exch', scrCrypto: isC, scrIndia: st.scrAsset === 'india',
-      scrAssetNote: st.scrAsset === 'india' ? 'NSE large and mid caps, in rupees, with the same buy/sell rules' : st.scrAsset === 'exch' ? 'Every liquid NASDAQ and NYSE stock, scored by the nightly job' : isC ? 'Top 1,000 coins, sorted by market cap. Type in the search bar to filter. Coins with no max supply (ETH, SOL) score low on scarcity, so they rarely appear in the hold picks' : 'S&P 500 stocks scanned by the app',
+      scrAssetSeg: [['stocks', 'S&P 500'], ['exch', 'NASDAQ/NYSE'], ['india', 'India'], ['canada', 'Canada'], ['crypto', 'Crypto']].map(([id, label]) => ({ label, style: segS((st.scrAsset || 'stocks') === id), pick: () => { try { sessionStorage.setItem('divergence.scrAsset', id); } catch (e) { /* ignore */ } this.setState({ scrAsset: id, scrMsg: '' }); if (id === 'crypto') this.cryptoBoot(); if (id === 'india') this.indiaBoot(); if (id === 'canada') this.marketLoad('canada'); } })),
+      scrStocks: !isC && st.scrAsset !== 'india' && st.scrAsset !== 'canada' && st.scrAsset !== 'exch', scrCrypto: isC, scrIndia: st.scrAsset === 'india' || st.scrAsset === 'canada',
+      scrAssetNote: st.scrAsset === 'canada' ? 'TSX large and mid caps, in Canadian dollars, with the same buy/sell rules' : st.scrAsset === 'india' ? 'NSE large and mid caps, in rupees, with the same buy/sell rules' : st.scrAsset === 'exch' ? 'Every liquid NASDAQ and NYSE stock, scored by the nightly job' : isC ? 'Top 1,000 coins, sorted by market cap. Type in the search bar to filter. Coins with no max supply (ETH, SOL) score low on scarcity, so they rarely appear in the hold picks' : 'S&P 500 stocks scanned by the app',
       cHoldCards: [], cHoldEmpty: false, cHoldEmptyTxt: '', cHoldNote: '', cFltSeg: [], cHead: [], cRows: [], cGrid: '1fr', cCaption: '', cMore: false, cShowMore: () => {}
     };
     if (!isC) return base;
@@ -3789,6 +3822,7 @@ class Component extends DCLogic {
   refreshScreener() {
     const k = this.state.scrAsset;
     if (k === 'exch') { this.setState({ scrMsg: 'Reloading the nightly scan…' }); return this.loadPublished().then(() => this.setState({ scrMsg: this.exch ? 'Loaded ' + this.exch.rows.length + ' stocks from ' + new Date(this.exch.updated).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : 'No NASDAQ/NYSE scan has been published yet' })); }
+    if (k === 'canada') { this.setState({ scrMsg: 'Reloading the TSX scan…' }); return this.marketLoad('canada', true).then(() => this.setState({ scrMsg: '' })); }
     return k === 'india' ? this.refreshIndia() : k === 'crypto' ? this.refreshCrypto() : this.refreshStocks();
   }
   async refreshStocks() {
@@ -3861,6 +3895,32 @@ class Component extends DCLogic {
     K.syms.forEach(x => { keep[x.s] = 1; if (!INDIA.find(a => a.sym === x.s)) INDIA.push({ sym: x.s, tk: x.tk, name: x.n, yh: x.s, kind: 'india', isec: x.sec || 'Other' }); });
     const prot = this.protectedSyms();
     for (let i = INDIA.length - 1; i >= 0; i--) if (!keep[INDIA[i].sym] && !prot[INDIA[i].sym]) INDIA.splice(i, 1);
+  }
+  async marketLoad(mk, force) {
+    this.mktBusy = this.mktBusy || {}; this.mktAt = this.mktAt || {};
+    if (this.mktBusy[mk] || this.dead) return;
+    if (!force && Date.now() - (this.mktAt[mk] || 0) < 10 * 60e3) return;
+    this.mktBusy[mk] = 1;
+    try {
+      const D = await fetch('data/' + mk + '.json?v=' + Date.now(), { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
+      if (!D || !D.symbols || !D.bars) { this.setState({ mktMsg: 'No ' + (mk === 'canada' ? 'Canada' : 'India') + ' scan found yet. Run the Daily calibration job on GitHub first.', inTick: Date.now() }); return; }
+      const arr = mk === 'canada' ? CANADA : INDIA, have = {}; arr.forEach(a => { have[a.sym] = 1; });
+      D.symbols.forEach(x => {
+        MKT_W[x.s] = x.w || MKT_W[x.s] || 0;
+        if (have[x.s]) return;
+        const a = { sym: x.s, tk: x.tk, name: x.n, yh: x.s, kind: mk, isec: x.sec || 'Other' };
+        arr.push(a); if (!ASSETS.find(z => z.sym === x.s)) ASSETS.push(a);
+      });
+      if (mk === 'canada') CANADA_IDX.forEach(([sy, nm]) => { if (!ASSETS.find(x => x.sym === sy)) ASSETS.push({ sym: sy, name: nm, yh: sy, kind: 'index' }); });
+      const add = {}, qa = {};
+      Object.keys(D.bars).forEach(sy => {
+        const d = D.bars[sy], n = d.c.length, cur = this.state.bars[sy];
+        if (n < 60) return;
+        if (!cur || !cur.length || cur[0].synth || cur[cur.length - 1].t < d.t[n - 1] * 1000) { add[sy] = closesToBars(d.t, d.c); qa[sy] = { p: d.c[n - 1], ch: (d.c[n - 1] / d.c[n - 2] - 1) * 100, at: Date.now() }; }
+      });
+      this.mktAt[mk] = Date.now(); this.inCache = null; this.mktCache = null;
+      this.setState(s => ({ bars: Object.assign({}, s.bars, add), quotes: Object.assign({}, qa, s.quotes), inTick: Date.now(), mktMsg: '' }));
+    } finally { this.mktBusy[mk] = 0; }
   }
   async refreshIndia() {
     if (this.scrBusy || this.dead) return;
@@ -4998,7 +5058,7 @@ class Component extends DCLogic {
     if (st.screen === 'chart' && selA) {
       const ser = this.series(st.sel);
       if (ser && ser.length >= 60) {
-        const unit = /^\^(TNX|FVX|TYX|IRX)$/.test(selA.yh || '') ? 'yld' : /=X$/.test(selA.yh || '') ? 'fx' : selA.kind === 'index' ? 'pts' : selA.kind === 'india' ? 'inr' : 'usd';
+        const unit = /^\^(TNX|FVX|TYX|IRX)$/.test(selA.yh || '') ? 'yld' : /=X$/.test(selA.yh || '') ? 'fx' : selA.kind === 'index' ? 'pts' : selA.kind === 'india' ? 'inr' : selA.kind === 'canada' ? 'cad' : 'usd';
         const v = levelsView(ser.map(b => b.c), ser.map(b => b.h), ser.map(b => b.l), unit);
         if (v) lvCard = Object.assign({ show: true }, v);
       }
@@ -5226,7 +5286,7 @@ class Component extends DCLogic {
     const E50 = ema(cl, 50)[i], E200 = cl.length >= 200 ? ema(cl, 200)[i] : null;
     if (E200 != null) { if (cl[i] > E50 && E50 > E200) sc += add('Above 50 & 200-day', 8, 'up'); else if (cl[i] < E50 && E50 < E200) sc += add('Below 50 & 200-day', -10, 'down'); else if (cl[i] < E200) sc += add('Below 200-day', -5, 'down'); }
     if (rs > 75) sc += add('RSI ' + rs.toFixed(0) + ' overbought', -7, 'down'); else if (rs < 30) sc += add('RSI ' + rs.toFixed(0) + ' oversold', 6, 'up');
-    const lv = levelsView(cl, b.map(z => z.h != null ? z.h : z.c), b.map(z => z.l != null ? z.l : z.c), a.kind === 'index' ? 'pts' : a.kind === 'india' ? 'inr' : 'usd');
+    const lv = levelsView(cl, b.map(z => z.h != null ? z.h : z.c), b.map(z => z.l != null ? z.l : z.c), a.kind === 'index' ? 'pts' : a.kind === 'india' ? 'inr' : a.kind === 'canada' ? 'cad' : 'usd');
     if (lv) {
       const w = s => /strong buying/i.test(s) ? 2 : /buying/i.test(s) ? 1 : /strong selling/i.test(s) ? -2 : /selling/i.test(s) ? -1 : 0;
       const ps = w(lv.stW) * 3 + w(lv.ltW) * 4; if (ps) sc += add('Pressure ' + lv.stW.toLowerCase() + ' / ' + lv.ltW.toLowerCase(), ps, ps > 0 ? 'up' : 'down');
@@ -6038,14 +6098,30 @@ class Component extends DCLogic {
       S = this.termStats = { key, list };
     }
     const L = S.list;
+    const mk = st.mktSel || 'us';
+    let Lh = L;
+    if (mk !== 'us') {
+      const ck = mk + '|' + st.inTick + '|' + st.horizon;
+      if (!this.mktCache || this.mktCache.k !== ck) {
+        const out = [];
+        (mk === 'canada' ? CANADA : INDIA).forEach(a => {
+          const b = st.bars[a.sym]; if (!b || b.length < 60 || b[0].synth) return;
+          const cl = b.map(z => z.c), n = cl.length, R = rsi(cl, 14), q = st.quotes[a.sym];
+          out.push({ sym: a.sym, lab: a.tk, name: a.name, sector: a.isec || 'Other', ch: q && q.ch != null ? q.ch : (cl[n - 1] / cl[n - 2] - 1) * 100, w1: (cl[n - 1] / cl[Math.max(0, n - 6)] - 1) * 100, m1: (cl[n - 1] / cl[Math.max(0, n - 22)] - 1) * 100, r: R[n - 1], sig: this.row(a, st.horizon), cap: null, mw: MKT_W[a.sym] || 0 });
+        });
+        this.mktCache = { k: ck, v: out };
+      }
+      Lh = this.mktCache.v;
+      if (!Lh.length && !this.state.mktMsg && !(this.mktBusy && this.mktBusy[mk]) && !(this.mktAt && this.mktAt[mk])) setTimeout(() => { try { this.marketLoad(mk); } catch (e) { /* ignore */ } }, 0);
+    }
 
     const metric = st.heatMetric || 'day';
     const heatVal = x => metric === 'day' ? clamp(x.ch / 3, -1, 1) : metric === 'week' ? clamp(x.w1 / 8, -1, 1) : metric === 'score' ? (x.sig ? (x.sig.action === 'BUY' ? 1 : x.sig.action === 'SELL' ? -1 : 0) * clamp(x.sig.score / 80, 0, 1) : 0) : clamp(-(x.r - 50) / 25, -1, 1);
     const heatTxt = x => metric === 'day' ? pct(x.ch) : metric === 'week' ? pct(x.w1, 1) : metric === 'score' ? (x.sig ? x.sig.action + ' ' + x.sig.score : '—') : 'RSI ' + (x.r != null ? x.r.toFixed(0) : '—');
     const heatCol = v => { const a2 = Math.abs(v); if (a2 < 0.05) return dark ? 'oklch(0.32 0.01 260)' : 'oklch(0.86 0.006 260)'; const hue = v > 0 ? hueUp : hueDn; return dark ? 'oklch(' + (0.33 + 0.22 * a2).toFixed(3) + ' ' + (0.05 + 0.13 * a2).toFixed(3) + ' ' + hue + ')' : 'oklch(' + (0.86 - 0.32 * a2).toFixed(3) + ' ' + (0.05 + 0.14 * a2).toFixed(3) + ' ' + hue + ')'; };
-    const capsS = L.map(x => x.cap).filter(Boolean).sort((a, b) => a - b), medCap = capsS.length ? capsS[Math.floor(capsS.length / 2)] : 1;
-    const wt = x => Math.pow(x.cap || medCap, 0.55);
-    const bySec = {}; L.forEach(x => { (bySec[x.sector] = bySec[x.sector] || []).push(x); });
+    const wv = x => mk === 'us' ? x.cap : x.mw, capsS = Lh.map(wv).filter(Boolean).sort((a, b) => a - b), medCap = capsS.length ? capsS[Math.floor(capsS.length / 2)] : 1;
+    const wt = x => Math.pow(wv(x) || medCap, mk === 'us' ? 0.55 : 0.5);
+    const bySec = {}; Lh.forEach(x => { (bySec[x.sector] = bySec[x.sector] || []).push(x); });
     const HW = 1000, HH = 560, pc = (v, t) => (v / t * 100).toFixed(3) + '%';
     const heatSectors = [], heatTiles = [];
     squarify(Object.keys(bySec).map(k => ({ k, w: bySec[k].reduce((s, x) => s + wt(x), 0) })).sort((a, b) => b.w - a.w), 0, 0, HW, HH).forEach(sr => {
@@ -6053,11 +6129,20 @@ class Component extends DCLogic {
       heatSectors.push({ name: sr.it.k, show: hdr > 0, style: 'position:absolute;box-sizing:border-box;border:1px solid var(--bg);left:' + pc(sr.x, HW) + ';top:' + pc(sr.y, HH) + ';width:' + pc(sr.w, HW) + ';height:' + pc(sr.h, HH) });
       squarify(bySec[sr.it.k].map(x => ({ x, w: wt(x) })).sort((a, b) => b.w - a.w), sr.x + 1, sr.y + hdr + 1, sr.w - 2, sr.h - hdr - 2).forEach(t => {
         const x = t.it.x, v = heatVal(x), a2 = Math.abs(v), fs = clamp(Math.min(t.w / 4, t.h / 2.3), 7, 20);
-        heatTiles.push({ sym: x.sym, txt: heatTxt(x), title: x.sym + ' · ' + x.name + ' · ' + heatTxt(x), showSym: t.w > 20 && t.h > 11, showTxt: t.w > 42 && t.h > 32,
+        heatTiles.push({ sym: x.lab || x.sym, txt: heatTxt(x), title: x.sym + ' · ' + x.name + ' · ' + heatTxt(x), showSym: t.w > 20 && t.h > 11, showTxt: t.w > 42 && t.h > 32,
           style: 'position:absolute;box-sizing:border-box;border:1px solid var(--bg);overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;line-height:1.15;left:' + pc(t.x, HW) + ';top:' + pc(t.y, HH) + ';width:' + pc(t.w, HW) + ';height:' + pc(t.h, HH) + ';background:' + heatCol(v) + ';color:' + (dark || a2 > 0.5 ? '#FFFFFF' : '#16171B'),
           symStyle: M + 'font-weight:700;font-size:' + fs.toFixed(1) + 'px', txtStyle: M + 'font-size:' + Math.max(8, fs * 0.6).toFixed(1) + 'px;opacity:.9', open: openSym(x.sym) });
       });
     });
+
+    const secAgg = {};
+    Lh.forEach(x => { const b = st.bars[x.sym]; const m1 = x.m1 != null ? x.m1 : (b && b.length > 25 ? (b[b.length - 1].c / b[b.length - 22].c - 1) * 100 : null); const g = secAgg[x.sector] = secAgg[x.sector] || { n: 0, d: 0, w: 0, m: 0, mn: 0, b: 0, s: 0 }; g.n++; g.d += x.ch || 0; g.w += x.w1 || 0; if (m1 != null && isFinite(m1)) { g.m += m1; g.mn++; } if (x.sig && x.sig.action === 'BUY') g.b++; if (x.sig && x.sig.action === 'SELL') g.s++; });
+    const secSort = st.secSort || 'm';
+    const secList = Object.keys(secAgg).filter(k => secAgg[k].n >= 2).map(k => { const g = secAgg[k]; return { k, n: g.n, d: g.d / g.n, w: g.w / g.n, m: g.mn ? g.m / g.mn : 0, b: g.b, s: g.s }; }).sort((a, b) => b[secSort] - a[secSort]);
+    const secMax = Math.max(0.5, ...secList.map(o => Math.abs(o[secSort])));
+    const secRows = secList.map(o => { const v = o[secSort]; return { name: o.k, n: String(o.n), d: pct(o.d), w: pct(o.w, 1), m: pct(o.m, 1), dS: 'text-align:right;font-weight:700;color:' + cv(o.d), wS: 'text-align:right;font-weight:700;color:' + cv(o.w), mS: 'text-align:right;font-weight:700;color:' + cv(o.m), bs: o.b + '↑ ' + o.s + '↓', bar: 'position:absolute;top:0;bottom:0;border-radius:4px;background:' + (v >= 0 ? 'var(--up)' : 'var(--down)') + ';width:' + (Math.abs(v) / secMax * 50).toFixed(1) + '%;' + (v >= 0 ? 'left:50%' : 'right:50%') }; });
+    const secWord = { d: 'today', w: 'this week', m: 'over the past month' }[secSort];
+    const secNote = secList.length >= 2 ? 'Leading ' + secWord + ': ' + secList.slice(0, 2).map(o => o.k + ' ' + pct(o[secSort], 1)).join(', ') + '. Lagging: ' + secList.slice(-2).reverse().map(o => o.k + ' ' + pct(o[secSort], 1)).join(', ') + '.' : 'Waiting for prices…';
 
     let idxStrip = [], spx = { st: '…', lt: '…', stStyle: '', ltStyle: '', price: '—', chg: '', chgStyle: '', watch: 'Loading index data…', hasCrit: false, crit: '' };
     if (st.idx) {
@@ -6195,7 +6280,7 @@ class Component extends DCLogic {
           bdMarkR = 'M' + X(g.p1).toFixed(1) + ' ' + ry(g.r1).toFixed(1) + 'L' + X(g.p2).toFixed(1) + ' ' + ry(g.r2).toFixed(1);
         }
         if (BD.sig) { const g = BD.sig, bull = g.side === 'BUY'; bdCol = bull ? 'var(--up)' : 'var(--down)'; bdTxt = g.side + ' · price hit the 20-day Donchian ' + (bull ? 'low' : 'high') + ' outside the ' + (bull ? 'lower' : 'upper') + ' Bollinger band ' + g.ago + ' bar' + (g.ago === 1 ? '' : 's') + ' ago, with ' + (bull ? 'oversold bullish' : 'overbought bearish') + ' RSI divergence (' + g.r1.toFixed(0) + ' → ' + g.r2.toFixed(0) + ') and price now ' + (bull ? 'above' : 'below') + ' that ' + (bull ? 'low' : 'high'); }
-        const unit = /^\^(TNX|FVX|TYX|IRX)$/.test(a.yh || '') ? 'yld' : /=X$/.test(a.yh || '') ? 'fx' : a.kind === 'index' ? 'pts' : a.kind === 'india' ? 'inr' : 'usd';
+        const unit = /^\^(TNX|FVX|TYX|IRX)$/.test(a.yh || '') ? 'yld' : /=X$/.test(a.yh || '') ? 'fx' : a.kind === 'index' ? 'pts' : a.kind === 'india' ? 'inr' : a.kind === 'canada' ? 'cad' : 'usd';
         const f = levelFmt(unit);
         const yTicks = [0, 0.25, 0.5, 0.75, 1].map(t => { const v = hi - (hi - lo) * t, yy = t * PH; return { y: yy.toFixed(1), v: f(v), style: 'position:absolute;right:-52px;transform:translateY(-50%);' + M + 'font-size:9.5px;color:var(--mute);top:' + (t * 100).toFixed(1) + '%' }; });
         const xTicks = [0, 0.2, 0.4, 0.6, 0.8, 1].map(t => { const k = Math.min(n - 1, s0 + Math.round(t * (N - 1))); const dt = new Date(b[k].t); return { v: dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: N > 260 ? '2-digit' : undefined }), style: 'position:absolute;transform:translateX(-50%);' + M + 'font-size:9.5px;color:var(--mute);white-space:nowrap;left:' + (X(k) / CW * 100).toFixed(1) + '%' }; });
@@ -6327,7 +6412,10 @@ class Component extends DCLogic {
       horizonSeg: seg([['short', 'Short term'], ['long', 'Long term']], st.horizon, v => this.setState({ horizon: v })),
       themeSeg: seg([['dark', 'Dark'], ['light', 'Light']], st.theme || 'dark', v => { try { localStorage.setItem('divergence.term.theme', v); } catch (e) { /* ignore */ } this.setState({ theme: v }); }),
       idxStrip, spx, breadth,
-      heatSectors, heatTiles, heatEmpty: heatTiles.length === 0, heatCount: L.length,
+      heatSectors, heatTiles, heatEmpty: heatTiles.length === 0, heatCount: Lh.length, heatTitle: 'Market map · ' + ({ us: 'United States', canada: 'Canada (TSX)', india: 'India (NSE)' }[mk]) + ' · ' + Lh.length + ' stocks',
+      mktSeg: seg([['us', 'US'], ['canada', 'Canada'], ['india', 'India']], mk, id => { this.setState({ mktSel: id, mktMsg: '' }); if (id !== 'us') this.marketLoad(id); }),
+      secSeg: seg([['d', 'Day'], ['w', 'Week'], ['m', 'Month']], secSort, id => this.setState({ secSort: id })), secRows, secNote,
+      heatEmptyMsg: mk === 'us' ? 'Loading daily prices for the stock universe…' : (st.mktMsg || 'Loading ' + (mk === 'canada' ? 'Canadian' : 'Indian') + ' stocks…'),
       heatSeg: seg([['day', 'Day %'], ['week', 'Week %'], ['score', 'Signal'], ['rsi', 'RSI']], metric, v => this.setState({ heatMetric: v })),
       heatLegend: (metric === 'rsi' ? 'Green = oversold (low RSI), red = overbought' : metric === 'score' ? 'Green = BUY, red = SELL, brightness = score' : 'Green = up, red = down') + ' · tile size: market cap (compressed) where known · grouped by sector · click a tile for the full chart',
       sigSeg: seg([['combined', 'Combined'], ['tech', 'Technical']], sigMode, v => this.setState({ sigMode: v })),
