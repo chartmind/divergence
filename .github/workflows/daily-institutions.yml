@@ -1,0 +1,33 @@
+name: Daily institutions
+on:
+  schedule:
+    - cron: '30 11 * * *'    # every morning
+    - cron: '30 22 * * 1-5'  # evening, after the SEC's end-of-day filings
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency:
+  group: divergence-data
+  cancel-in-progress: false
+jobs:
+  institutions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Scan 13F filings
+        env:
+          SEC_CONTACT: ${{ secrets.SEC_CONTACT }}
+        run: node institutions.mjs
+      - name: Publish
+        if: always()
+        run: |
+          git config user.name "divergence-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -A data
+          git diff --cached --quiet || git commit -m "Daily institutions $(date -u +%F)"
+          git pull --rebase --autostash || true
+          git push
