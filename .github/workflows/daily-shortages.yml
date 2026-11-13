@@ -1,0 +1,31 @@
+name: Daily shortages
+on:
+  schedule:
+    - cron: '15 11 * * *'    # every morning, before the US open
+    - cron: '45 20 * * 1-5'  # again after the close
+  workflow_dispatch: {}
+permissions:
+  contents: write
+concurrency:
+  group: divergence-data
+  cancel-in-progress: false
+jobs:
+  shortages:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Scan shortages and supply news
+        run: node shortages.mjs
+      - name: Publish
+        if: always()
+        run: |
+          git config user.name "divergence-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add -A data
+          git diff --cached --quiet || git commit -m "Daily shortages $(date -u +%F)"
+          git pull --rebase --autostash || true
+          git push
