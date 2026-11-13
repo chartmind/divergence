@@ -187,7 +187,14 @@ function expandBars(x) { return x.t.map((t, i) => ({ t: t * 1000, o: x.o[i], h: 
 function regPts(cal, id) { if (!cal || !cal.feats || !cal.feats[id]) return 0; const R = cal.byReg && cal.reg ? cal.byReg[cal.reg][id] : null; if (R && R.n >= 30) return R.status === 'active' ? R.pts : 0; return cal.feats[id].pts * 0.5; }
 
 // Daily signal: trend + RSI + MACD base, plus today's calibrated points for the current market type.
-function signalOf(b, cal) {
+let RANKS = null;
+function peerGate(a, rk, rsiV, ret1m) {
+  if (a === 'BUY' && (rsiV < 30 || ret1m <= -0.15)) return 'HOLD';
+  if (a === 'BUY' && rk && rk.ok && rk.pct != null && rk.pct < 50) return 'HOLD';
+  if (a === 'SELL' && rk && rk.ok && rk.pct != null && rk.pct > 50) return 'HOLD';
+  return a;
+}
+function signalOf(b, cal, sym) {
   if (!b || b.length < 220) return null;
   const cl = b.map(x => x.c), hi = b.map(x => x.h != null ? x.h : x.c), lo = b.map(x => x.l != null ? x.l : x.c), v = b.map(x => x.v || 0);
   const k = cl.length - 1, p = cl[k], E10 = ema(cl, 10), E50 = ema(cl, 50), E200 = ema(cl, 200), R = rsi(cl, 14), H = macd(cl).hist;
@@ -200,6 +207,7 @@ function signalOf(b, cal) {
   let a = s >= 3 ? 'BUY' : s <= -3 ? 'SELL' : 'HOLD', gate = '';
   if (a === 'BUY' && down && p < E50[k]) { a = 'HOLD'; gate = 'buy blocked: downtrend'; }
   if (a === 'SELL' && R[k] < 32 && p < lo52 * 1.06) { a = 'HOLD'; gate = 'sell held: near 52-week low'; }
+  { const a0 = a; a = peerGate(a, RANKS && (RANKS.rows[sym] || RANKS.coins[sym]), R[k], p / cl[k - 21] - 1); if (a !== a0) gate = a0 === 'BUY' ? 'buy held: weak vs peers or oversold dip' : 'sell held: strong vs peers'; }
   const sup = Math.min(...lo.slice(-20)), res = Math.max(...hi.slice(-20));
   const stop = Math.min(sup, p - 1.5 * atr), target = Math.max(res, p + 2 * atr);
   return { a, s: Math.round(s * 10) / 10, p, r: Math.round(R[k]), e10: E10[k], e50: E50[k], e200: E200[k], atr, sup, res, stop, target, rr: (target - p) / Math.max(1e-9, p - stop), gate, why: why.sort((x, y) => Math.abs(y[1]) - Math.abs(x[1])).slice(0, 3).map(([id, pt]) => (CAL_FEATS.find(c => c[0] === id) || [id, id])[1] + ' ' + (pt > 0 ? '+' : '') + pt.toFixed(1)) };
@@ -253,7 +261,7 @@ async function handle(st, sigs, m) {
   if (cmd === '/levels') { const L = Object.entries(u.levels).flatMap(([s, a]) => a.map(x => s + ' ' + x.dir + ' ' + $(x.p))); return send(chat, L.length ? '<b>Your price levels</b>\n' + L.join('\n') : 'No levels yet. Try /level NVDA 120'); }
   if (cmd === '/signal') {
     const n = await normSym(args[0] || ''); if (!n) return send(chat, 'Usage: /signal NVDA');
-    const x = await chartBars(n.sym), cal = (await readJSON('data/calibration.json', {})).cal, g = x && signalOf(x.bars, cal);
+    const x = await chartBars(n.sym), cal = (await readJSON('data/calibration.json', {})).cal; RANKS = await readJSON('data/ranks.json', null); const g = x && signalOf(x.bars, cal, n.sym);
     if (!g) return send(chat, 'Not enough history for ' + n.sym + ' yet.');
     return send(chat, icon(g.a) + ' <b>' + n.sym + '</b> ' + esc(n.name) + '\n<b>' + g.a + '</b> · score ' + g.s + (g.gate ? ' (' + g.gate + ')' : '') + '\nPrice ' + $(g.p) + ' · RSI ' + g.r + '\nSupport ' + $(g.sup) + ' · resistance ' + $(g.res) + '\nEMA 50 ' + $(g.e50) + ' · EMA 200 ' + $(g.e200) + (g.why.length ? '\nWorking now: ' + g.why.join(', ') : '') + link);
   }
@@ -284,12 +292,12 @@ function bestSetups(sigs, n = 5) {
 function setupLine([s, g]) { return '🟢 <b>' + s + '</b> ' + $(g.p) + ' → ' + $(g.target) + ' · stop ' + $(g.stop) + ' · R:R 1:' + g.rr.toFixed(1); }
 
 async function pmBrief(st) {
-  const cal = (await readJSON('data/calibration.json', {})).cal;
+  const cal = (await readJSON('data/calibration.json', {})).cal; RANKS = await readJSON('data/ranks.json', null);
   const B = await readJSON('data/bars.json', {}), prevSigs = (await readJSON(SIG_F, {})).sigs || {};
   const sigs = {};
-  for (const [s, x] of Object.entries(B.bars || {})) { const g = signalOf(expandBars(x), cal); if (g) sigs[s] = g; }
+  for (const [s, x] of Object.entries(B.bars || {})) { const g = signalOf(expandBars(x), cal, s); if (g) sigs[s] = g; }
   const extra = [...new Set(Object.values(st.users).flatMap(u => u.list))].filter(s => !sigs[s]);
-  for (const s of extra) { const x = await chartBars(s); const g = x && signalOf(x.bars, cal); if (g) sigs[s] = g; await sleep(300); }
+  for (const s of extra) { const x = await chartBars(s); const g = x && signalOf(x.bars, cal, s); if (g) sigs[s] = g; await sleep(300); }
   const spx = B.bars && B.bars.SPY ? expandBars(B.bars.SPY) : null, spCh = spx ? (spx[spx.length - 1].c / spx[spx.length - 2].c - 1) * 100 : null;
   const reg = cal && cal.reg, regChanged = st.lastReg && reg && st.lastReg !== reg;
   const best = bestSetups(sigs), nb = Object.values(sigs).filter(g => g.a === 'BUY').length, ns = Object.values(sigs).filter(g => g.a === 'SELL').length;
