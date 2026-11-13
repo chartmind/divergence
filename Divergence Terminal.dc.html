@@ -889,7 +889,7 @@ a:hover{color:oklch(0.44 0.12 165)}
           </sc-for>
         </div>
       </sc-if>
-      <span style="padding:0 12px 12px;font-size:10.5px;line-height:1.5;color:var(--faint);text-wrap:pretty">Source: SEC EDGAR Form 13F, comparing each fund's latest quarter with the one before. Funds file up to 45 days after quarter end, so these are holdings as of that quarter, not today; filings for the Sep 30 quarter are due by Nov 14. Covers US-listed long stock positions only (no shorts, options or foreign shares). Tickers are matched from company names; "—" means no match, click to search it.</span>
+      <span style="padding:0 12px 12px;font-size:10.5px;line-height:1.5;color:var(--faint);text-wrap:pretty">Source: SEC EDGAR Form 13F, scanned automatically every day (a fund is re-read only when it files something new), comparing each fund's latest quarter with the one before. Funds file up to 45 days after quarter end, so these are holdings as of that quarter, not today; filings for the Sep 30 quarter are due by Nov 14. Covers US-listed long stock positions only (no shorts, options or foreign shares). Tickers are matched from company names; "—" means no match, click to search it.</span>
     </div>
     </div>
     </sc-if>
@@ -2415,6 +2415,7 @@ function pickSpread(op, plan) {
   return { spread: true, label: op.chainPick.label + ' ' + money(lg.k) + '/' + money(sh.k) + (call ? ' call' : ' put') + ' spread', mid: cost, est, stopVal, gain: (est / cost - 1) * 100, width, k: lg.k };
 }
 function lsGet(k, d) { try { const v = JSON.parse(localStorage.getItem(k)); return v == null ? d : v; } catch (e) { return d; } }
+function lsSave13(F) { const o = {}; Object.keys(F).forEach(c => { if (!FUNDS.some(f => f.cik === c && f.srv)) o[c] = F[c]; }); lsSet(F13_KEY, o); } // server-scanned funds are re-fetched each visit, not stored in the browser
 function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* quota */ } }
 const EARN = lsGet('divergence.earn.v1', {});
 function bbdc(b, RS, P) {
@@ -3428,6 +3429,17 @@ class Component extends DCLogic {
     if (!this.dead && (BF || SG)) this.setState({ pubBrief: BF, pubSigs: SG });
     const EX = await get('data/exchange.json');
     if (EX && EX.rows && !this.dead) { this.exch = EX; this.setState({ exchTick: Date.now() }); }
+    const INS = await get('data/institutions.json');
+    if (INS && INS.funds && !this.dead) {
+      try {
+        (INS.list || []).forEach(l => { if (!FUNDS.some(f => f.cik === l.cik)) FUNDS.push({ cik: l.cik, short: l.short, mgr: l.mgr, srv: true }); });
+        const F = Object.assign({}, this.state.f13); let ch = false;
+        Object.keys(INS.funds).forEach(cik => { const sv = INS.funds[cik], o = F[cik];
+          if (o && o.acc === sv.acc) { F[cik] = Object.assign({}, o, { at: Date.now() }); ch = true; }
+          else if (!o || (sv.filed || '') >= (o.filed || '')) { F[cik] = Object.assign({}, sv, { at: Date.now() }); ch = true; } });
+        if (ch) { lsSave13(F); this.setState({ f13: F, f13Done: Date.now() }); }
+      } catch (e) { /* keep the browser-loaded data */ }
+    }
     const SHV = await get('data/shortages.json');
     if (SHV && SHV.themes && !this.dead) { this.shortSrv = SHV; this.setState({ shTick: Date.now() }); }
     const RK = await get('data/ranks.json');
@@ -5641,9 +5653,10 @@ class Component extends DCLogic {
     try {
       const cache = Object.assign({}, this.state.f13);
       let done = 0;
-      if (FUNDS.some(f => !cache[f.cik])) this.tickerMap();
+      if (FUNDS.some(f => !f.srv && !cache[f.cik])) this.tickerMap();
       for (const f of FUNDS) {
         if (this.dead) return;
+        if (f.srv) { done++; continue; } // server-scanned funds are not fetched through the browser relays
         this.setState({ f13Prog: 'reading ' + f.short + ' · ' + done + '/' + FUNDS.length });
         const old = cache[f.cik];
         if (old && Date.now() - old.at < 20 * 3600e3) { done++; continue; }
@@ -5673,10 +5686,10 @@ class Component extends DCLogic {
         cache[f.cik] = { at: Date.now(), name: sub.name, mgr: nmOk ? f.mgr : '', short: f.short, acc: fl[0].acc, filed: fl[0].filed, period: fl[0].period, prevPeriod: fl[1] ? fl[1].period : null,
           hold: cur, prev: prev ? prevM : null };
         done++;
-        lsSet(F13_KEY, cache);
+        lsSave13(cache);
         if (done <= 1 || Date.now() - (this.f13Push || 0) > 12000) { this.f13Push = Date.now(); this.setState({ f13: Object.assign({}, cache) }); }
       }
-      lsSet(F13_KEY, cache);
+      lsSave13(cache);
       this.setState({ f13: Object.assign({}, cache), f13Prog: '', f13Done: Date.now() });
     } finally { this.f13Busy = false; }
   }
