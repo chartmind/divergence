@@ -239,6 +239,35 @@ async function buildUniverse(prevU) {
 
 // ---------- India (NSE Nifty 500) ----------
 // Closes only: the India screener builds its candles from closes. Best effort: a failure here never fails the US job.
+
+// ---------- Canada (TSX): same file format as india.json so the app can score it with the same rules ----------
+const CANADA = ('RY|Royal Bank of Canada|Financials;TD|Toronto-Dominion Bank|Financials;BNS|Bank of Nova Scotia|Financials;BMO|Bank of Montreal|Financials;CM|CIBC|Financials;NA|National Bank|Financials;MFC|Manulife|Financials;SLF|Sun Life|Financials;GWO|Great-West Lifeco|Financials;IFC|Intact Financial|Financials;POW|Power Corp|Financials;BN|Brookfield Corp|Financials;BAM|Brookfield Asset Mgmt|Financials;FFH|Fairfax Financial|Financials;EQB|EQB|Financials;X|TMX Group|Financials;IGM|IGM Financial|Financials;ONEX|Onex|Financials;'
+ + 'CNQ|Canadian Natural Resources|Energy;SU|Suncor|Energy;CVE|Cenovus|Energy;IMO|Imperial Oil|Energy;TOU|Tourmaline Oil|Energy;ARX|ARC Resources|Energy;WCP|Whitecap Resources|Energy;MEG|MEG Energy|Energy;ENB|Enbridge|Energy;TRP|TC Energy|Energy;PPL|Pembina Pipeline|Energy;KEY|Keyera|Energy;GEI|Gibson Energy|Energy;CPG|Crescent Point|Energy;PEY|Peyto|Energy;'
+ + 'ABX|Barrick Gold|Materials;AEM|Agnico Eagle|Materials;WPM|Wheaton Precious Metals|Materials;FNV|Franco-Nevada|Materials;K|Kinross Gold|Materials;AGI|Alamos Gold|Materials;LUG|Lundin Gold|Materials;EDV|Endeavour Mining|Materials;OGC|OceanaGold|Materials;PAAS|Pan American Silver|Materials;NGD|New Gold|Materials;FM|First Quantum|Materials;LUN|Lundin Mining|Materials;HBM|Hudbay Minerals|Materials;TECK-B|Teck Resources|Materials;NTR|Nutrien|Materials;CCO|Cameco|Materials;NXE|NexGen Energy|Materials;IVN|Ivanhoe Mines|Materials;WFG|West Fraser|Materials;CFP|Canfor|Materials;'
+ + 'CP|Canadian Pacific Kansas City|Industrials;CNR|Canadian National Railway|Industrials;TFII|TFI International|Industrials;WSP|WSP Global|Industrials;STN|Stantec|Industrials;WCN|Waste Connections|Industrials;GFL|GFL Environmental|Industrials;CAE|CAE|Industrials;AC|Air Canada|Industrials;BBD-B|Bombardier|Industrials;TIH|Toromont|Industrials;FTT|Finning|Industrials;ARE|Aecon|Industrials;CIGI|Colliers|Real Estate;FSV|FirstService|Real Estate;'
+ + 'SHOP|Shopify|Technology;CSU|Constellation Software|Technology;GIB-A|CGI|Technology;OTEX|OpenText|Technology;DSG|Descartes|Technology;LSPD|Lightspeed|Technology;KXS|Kinaxis|Technology;CLS|Celestica|Technology;BB|BlackBerry|Technology;'
+ + 'FTS|Fortis|Utilities;EMA|Emera|Utilities;H|Hydro One|Utilities;CU|Canadian Utilities|Utilities;AQN|Algonquin Power|Utilities;NPI|Northland Power|Utilities;ALA|AltaGas|Utilities;BLX|Boralex|Utilities;'
+ + 'BCE|BCE|Telecom;T|Telus|Telecom;RCI-B|Rogers Communications|Telecom;QBR-B|Quebecor|Telecom;TRI|Thomson Reuters|Industrials;'
+ + 'ATD|Alimentation Couche-Tard|Consumer;L|Loblaw|Consumer;MRU|Metro|Consumer;EMP-A|Empire Co|Consumer;DOL|Dollarama|Consumer;QSR|Restaurant Brands|Consumer;GIL|Gildan|Consumer;CTC-A|Canadian Tire|Consumer;MG|Magna|Consumer;PBH|Premium Brands|Consumer;SAP|Saputo|Consumer;WN|George Weston|Consumer;ATZ|Aritzia|Consumer;PKI|Parkland|Energy;'
+ + 'CAR-UN|CT REIT Canadian Apartment|Real Estate;REI-UN|RioCan REIT|Real Estate;GRT-UN|Granite REIT|Real Estate;CHP-UN|Choice Properties|Real Estate;AP-UN|Allied Properties|Real Estate;SRU-UN|SmartCentres|Real Estate;'
+ + 'WELL|WELL Health|Health;JWEL|Jamieson Wellness|Health;DOO|BRP|Consumer;WTE|Westshore Terminals|Industrials;MDA|MDA Space|Industrials;DIR-UN|Dream Industrial|Real Estate').split(';').map(x => { const [tk, n, sec] = x.split('|'); return { s: tk + '.TO', tk, n, sec }; });
+async function canadaStage(now) {
+  const list = CANADA, bars = {}, wts = {}, t0 = Date.now(); let next = 0;
+  async function worker() {
+    while (next < list.length) {
+      if (Date.now() - t0 > 6 * 60 * 1000) return;
+      const u = list[next++];
+      try { const b = await yahooBars(u.s); if (b && b.length >= 60) { bars[u.s] = { t: b.map(x => Math.round(x.t / 1000)), c: b.map(x => Math.round(x.c * 1000) / 1000) }; wts[u.s] = Math.round(b.slice(-20).reduce((a, x) => a + x.c * (x.v || 0), 0) / 20); } } catch { /* skip symbol */ }
+      await sleep(250);
+    }
+  }
+  await Promise.all([worker(), worker(), worker()]);
+  const ix = await yahooBars('^GSPTSE'); if (ix && ix.length >= 60) bars['^GSPTSE'] = { t: ix.map(x => Math.round(x.t / 1000)), c: ix.map(x => Math.round(x.c * 100) / 100) };
+  const symbols = list.filter(u => bars[u.s]).map(u => Object.assign({}, u, { w: wts[u.s] || 0 }));
+  console.log('canada', symbols.length, 'of', list.length, 'stocks downloaded' + (bars['^GSPTSE'] ? ' · TSX index ok' : ' · TSX index missing'));
+  if (symbols.length < 40) { console.log('canada: too few stocks downloaded, keeping the previous canada.json'); return; }
+  await writeFile(new URL('canada.json', OUT), JSON.stringify({ updated: now, symbols, bars }));
+}
 async function indiaStage(now) {
   let t = null;
   for (const u of ['https://archives.nseindia.com/content/indices/ind_nifty500list.csv', 'https://www.niftyindices.com/IndexConstituent/ind_nifty500list.csv']) {
@@ -248,17 +277,17 @@ async function indiaStage(now) {
   const rows = csvRows(t.replace(/^﻿/, '')), h = (rows.shift() || []).map(x => x.trim()), iN = h.indexOf('Company Name'), iI = h.indexOf('Industry'), iS = h.indexOf('Symbol');
   if (iS < 0) { console.log('india: unexpected CSV header, skipping'); return; }
   const list = rows.map(r => { const tk = (r[iS] || '').trim().toUpperCase(); return { s: tk + '.NS', tk, n: (r[iN] || '').trim(), sec: (r[iI] || '').trim() }; }).filter(x => x.tk);
-  const bars = {}, t0 = Date.now(); let next = 0;
+  const bars = {}, wts = {}, t0 = Date.now(); let next = 0;
   async function worker() {
     while (next < list.length) {
       if (Date.now() - t0 > INDIA_BUDGET_MS) return;
       const u = list[next++];
-      try { const b = await yahooBars(u.s); if (b && b.length >= 60) bars[u.s] = { t: b.map(x => Math.round(x.t / 1000)), c: b.map(x => Math.round(x.c * 1000) / 1000) }; } catch { /* skip symbol */ }
+      try { const b = await yahooBars(u.s); if (b && b.length >= 60) { bars[u.s] = { t: b.map(x => Math.round(x.t / 1000)), c: b.map(x => Math.round(x.c * 1000) / 1000) }; wts[u.s] = Math.round(b.slice(-20).reduce((a, x) => a + x.c * (x.v || 0), 0) / 20); } } catch { /* skip symbol */ }
       await sleep(250);
     }
   }
   await Promise.all([worker(), worker(), worker()]);
-  const symbols = list.filter(u => bars[u.s]);
+  const symbols = list.filter(u => bars[u.s]).map(u => Object.assign({}, u, { w: wts[u.s] || 0 }));
   console.log('india', symbols.length, 'of', list.length, 'stocks downloaded');
   if (symbols.length < 100) { console.log('india: too few stocks downloaded, keeping the previous india.json'); return; }
   await writeFile(new URL('india.json', OUT), JSON.stringify({ updated: now, symbols, bars }));
@@ -605,6 +634,7 @@ async function main() {
   try { await rankStage(now, bars); } catch (e) { console.log('rank stage failed:', e && e.message); }
   try { await exchangeStage(now, cal); } catch (e) { console.log('exchange stage failed:', e && e.message); }
   try { await intradayStage(now, bars); } catch (e) { console.log('intraday stage failed:', e && e.message); }
+  try { await canadaStage(now); } catch (e) { console.log('canada stage failed:', e && e.message); }
   try { await indiaStage(now); } catch (e) { console.log('india stage failed:', e && e.message); }
 }
 main().catch(e => { console.error(e); process.exit(1); });
