@@ -4287,17 +4287,18 @@ class Component extends DCLogic {
     const b = this.state.bars[sym]; if (!b || b.length < 240) return null;
     const key = b.length + '|' + b[b.length - 1].t + '|' + b[b.length - 1].c;
     this.btC = this.btC || {};
-    const old = this.btC[sym]; if (old && old.key === key && old.v === 2) return old;
+    const old = this.btC[sym]; if (old && old.key === key && old.v === 3) return old;
     const n = b.length, start = Math.max(220, n - 252), cl = b.map(x => x.c);
     const sh = Object.create(this); sh.state = Object.assign({}, this.state, { opts: {}, quotes: {} }); sh.cache = {};
-    const res = { key, v: 2, short: [], long: [], bd: [] };
+    const res = { key, v: 3, short: [], long: [], bd: [] }, RS0 = rsi(cl, 14);
     const HZ = { short: 10, long: 40 };
     this.btMemo(cl, () => ['short', 'long'].forEach(hz => {
       let prev = 'HOLD';
       for (let j = start; j < n; j += 3) {
         const sl = b.slice(0, j + 1); sh.series = () => sl;
         let s = null; try { s = sh.computeSignal(sym, hz); } catch (e) { s = null; }
-        const act = s ? s.action : 'HOLD';
+        let act = s ? s.action : 'HOLD';
+        if (act === 'BUY' && ((RS0[j] != null && RS0[j] < 30) || cl[j] / cl[Math.max(0, j - 21)] - 1 <= -0.15)) act = 'HOLD'; // same dip-buying block as the live signal
         if ((act === 'BUY' || act === 'SELL') && act !== prev) {
           const f = j + HZ[hz], done = f < n, ex = done ? cl[f] : cl[n - 1];
           const ret = (ex / cl[j] - 1) * 100 * (act === 'BUY' ? 1 : -1);
