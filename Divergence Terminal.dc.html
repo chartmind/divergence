@@ -6105,7 +6105,7 @@ class Component extends DCLogic {
       if (!this.mktCache || this.mktCache.k !== ck) {
         const out = [];
         (mk === 'canada' ? CANADA : INDIA).forEach(a => {
-          const b = st.bars[a.sym]; if (!b || b.length < 60 || b[0].synth) return;
+          const b = st.bars[a.sym]; if (!b || b.length < 60) return;
           const cl = b.map(z => z.c), n = cl.length, R = rsi(cl, 14), q = st.quotes[a.sym];
           out.push({ sym: a.sym, lab: a.tk, name: a.name, sector: a.isec || 'Other', ch: q && q.ch != null ? q.ch : (cl[n - 1] / cl[n - 2] - 1) * 100, w1: (cl[n - 1] / cl[Math.max(0, n - 6)] - 1) * 100, m1: (cl[n - 1] / cl[Math.max(0, n - 22)] - 1) * 100, r: R[n - 1], sig: this.row(a, st.horizon), cap: null, mw: MKT_W[a.sym] || 0 });
         });
