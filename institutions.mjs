@@ -6,7 +6,9 @@
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { pathToFileURL } from 'node:url';
 const OUT = new URL('data/', pathToFileURL(process.cwd() + '/'));
-const UA = { 'User-Agent': 'Divergence research app ' + (process.env.SEC_CONTACT || 'github.com/chartmind/divergence'), 'Accept-Encoding': 'gzip, deflate' };
+// The SEC blocks automated requests whose User-Agent has no contact email (HTTP 403). Set the SEC_CONTACT secret to your own email to replace the default.
+const UA = { 'User-Agent': 'Divergence research ' + (process.env.SEC_CONTACT || 'chartmind@users.noreply.github.com'), 'Accept-Encoding': 'gzip, deflate' };
+let lastStatus = 0;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const KEEP = 400; // largest holdings kept per filing
 // [cik, short name, manager, text the SEC entity name must contain (guards against a wrong CIK)]
@@ -44,7 +46,7 @@ function parse13f(xml) {
 
 async function get(url, tries = 3) {
   for (let t = 0; t < tries; t++) {
-    try { const r = await fetch(url, { headers: UA }); if (r.status === 429 || r.status === 403) { await sleep(8000 * (t + 1)); continue; } if (!r.ok) return null; return await r.text(); }
+    try { const r = await fetch(url, { headers: UA }); lastStatus = r.status; if (r.status === 429) { await sleep(8000 * (t + 1)); continue; } if (!r.ok) { if (r.status === 403) console.log('SEC answered 403 for ' + url + ' - check the User-Agent/SEC_CONTACT'); return null; } return await r.text(); }
     catch (e) { await sleep(2000 * (t + 1)); }
   }
   return null;
@@ -52,7 +54,7 @@ async function get(url, tries = 3) {
 const jget = async u => { const t = await get(u); await sleep(220); try { return t ? JSON.parse(t) : null; } catch { return null; } };
 
 async function tickerMaps() {
-  const j = await jget('https://www.sec.gov/files/company_tickers.json'); if (!j) return null;
+  const j = await jget('https://www.sec.gov/files/company_tickers.json'); if (!j) { console.log('company_tickers.json failed, last HTTP status ' + lastStatus); return null; }
   const M = {}, C = {}, W = {};
   for (const k of Object.keys(j)) { const x = j[k]; if (!x || !x.ticker) continue; const n = nmNorm(x.title); if (!n) continue; if (!M[n]) { M[n] = x.ticker.replace('.', '-'); const w0 = n.split(' ')[0]; (W[w0] = W[w0] || []).push(n); } const c = n.replace(/ /g, ''); if (!C[c]) C[c] = x.ticker.replace('.', '-'); }
   return { M, C, W };
